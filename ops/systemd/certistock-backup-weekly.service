@@ -1,0 +1,8 @@
+[Unit]
+Description=CertiStock weekly backup
+
+[Service]
+Type=oneshot
+User=postgres
+EnvironmentFile=-/opt/apps/certistock/shared/env
+ExecStart=/usr/local/bin/certistock-backup.sh weekly

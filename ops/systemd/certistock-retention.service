@@ -1,0 +1,7 @@
+[Unit]
+Description=CertiStock backup retention and cold archive
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/certistock-retention.sh

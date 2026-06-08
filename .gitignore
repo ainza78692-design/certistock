@@ -1,0 +1,34 @@
+# Local dependencies
+node_modules/
+server/node_modules/
+ocr-worker/venv/
+
+# Build outputs
+dist/
+server/dist/
+coverage/
+*.tsbuildinfo
+release/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local environment and logs
+.env
+.env.*
+server/.env
+data/
+client-package/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Desktop packaging outputs
+release/*.exe
+release/*.msi
+release/*.dmg
+release/*.pkg
+release/*.appx
+release/*.dll

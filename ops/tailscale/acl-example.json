@@ -1,0 +1,20 @@
+{
+  "tagOwners": {
+    "tag:client-server": ["group:devops"]
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["group:devops"],
+      "dst": ["tag:client-server:*"]
+    }
+  ],
+  "ssh": [
+    {
+      "action": "accept",
+      "src": ["group:devops"],
+      "dst": ["tag:client-server"],
+      "users": ["deploy", "certistock", "ubuntu"]
+    }
+  ]
+}

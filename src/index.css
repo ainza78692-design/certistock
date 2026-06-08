@@ -1,0 +1,305 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * CertiStock — "Iris & Warm Sand" Design System
+ *
+ * LIGHT (flagship): Warm sand/ivory base, pure white cards,
+ *   rich iris primary, layered warm shadows, premium depth.
+ *
+ * DARK: Deep warm charcoal, rich iris accents, warm neutrals.
+ *
+ * Typography: Outfit (headings/body) + Geist Mono (data)
+ * Primary: Rich iris (252° hue) — the same family as Linear, Radix
+ * Neutrals: Warm sand/stone — NOT cold gray
+ */
+
+@layer base {
+  :root {
+    /* ─── Light Theme: "Luminous Sand" ─── */
+    --background: 40 33% 98%;
+    --foreground: 20 14% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 20 14% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 14% 10%;
+
+    --primary: 252 56% 57%;
+    --primary-foreground: 0 0% 100%;
+    --primary-muted: 252 45% 95%;
+
+    --secondary: 35 15% 93%;
+    --secondary-foreground: 20 14% 10%;
+
+    --muted: 35 12% 93%;
+    --muted-foreground: 25 6% 45%;
+
+    --accent: 35 15% 91%;
+    --accent-foreground: 20 14% 10%;
+
+    --success: 152 55% 38%;
+    --success-foreground: 0 0% 100%;
+    --success-muted: 152 40% 94%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 20 14% 10%;
+    --warning-muted: 42 75% 94%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-muted: 0 60% 96%;
+
+    --border: 30 12% 89%;
+    --input: 30 12% 89%;
+    --ring: 252 56% 57%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 38 22% 97%;
+    --sidebar-foreground: 25 10% 38%;
+    --sidebar-primary: 252 56% 57%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 35 15% 93%;
+    --sidebar-accent-foreground: 20 14% 10%;
+    --sidebar-border: 32 12% 91%;
+    --sidebar-ring: 252 56% 57%;
+
+    /* Layered warm shadows — the secret to premium depth */
+    --shadow-color: 30 20% 55%;
+    --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.05),
+                 0 1px 4px hsl(var(--shadow-color) / 0.04);
+    --shadow-md: 0 2px 4px hsl(var(--shadow-color) / 0.03),
+                 0 6px 16px hsl(var(--shadow-color) / 0.06),
+                 0 12px 32px hsl(var(--shadow-color) / 0.03);
+    --shadow-lg: 0 4px 8px hsl(var(--shadow-color) / 0.03),
+                 0 12px 32px hsl(var(--shadow-color) / 0.06),
+                 0 24px 60px hsl(var(--shadow-color) / 0.08);
+  }
+
+  .dark {
+    /* ─── Dark Theme: "Obsidian Iris" ─── */
+    --background: 24 6% 7%;
+    --foreground: 30 10% 88%;
+
+    --card: 24 6% 10%;
+    --card-foreground: 30 10% 88%;
+
+    --popover: 24 6% 10%;
+    --popover-foreground: 30 10% 88%;
+
+    --primary: 252 56% 67%;
+    --primary-foreground: 0 0% 100%;
+    --primary-muted: 252 30% 16%;
+
+    --secondary: 24 6% 14%;
+    --secondary-foreground: 30 10% 88%;
+
+    --muted: 24 6% 14%;
+    --muted-foreground: 25 6% 52%;
+
+    --accent: 24 6% 16%;
+    --accent-foreground: 30 10% 88%;
+
+    --success: 152 55% 45%;
+    --success-foreground: 24 6% 7%;
+    --success-muted: 152 25% 16%;
+
+    --warning: 38 85% 55%;
+    --warning-foreground: 24 6% 7%;
+    --warning-muted: 38 25% 16%;
+
+    --destructive: 0 65% 55%;
+    --destructive-foreground: 30 10% 95%;
+    --destructive-muted: 0 20% 16%;
+
+    --border: 24 6% 16%;
+    --input: 24 6% 16%;
+    --ring: 252 56% 67%;
+
+    --sidebar-background: 24 6% 8%;
+    --sidebar-foreground: 25 6% 55%;
+    --sidebar-primary: 252 56% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 24 6% 13%;
+    --sidebar-accent-foreground: 30 10% 88%;
+    --sidebar-border: 24 6% 14%;
+    --sidebar-ring: 252 56% 67%;
+
+    --shadow-color: 24 10% 3%;
+    --shadow-sm: 0 1px 3px hsl(var(--shadow-color) / 0.3);
+    --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.4),
+                 0 2px 4px hsl(var(--shadow-color) / 0.2);
+    --shadow-lg: 0 16px 48px -12px hsl(var(--shadow-color) / 0.5);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  .font-mono {
+    font-family: 'Geist Mono', ui-monospace, 'SFMono-Regular', monospace;
+  }
+
+  /* Custom scrollbar — adaptive */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.15);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.3);
+  }
+}
+
+@layer components {
+  /* ─── Surface Card ─── */
+  .surface {
+    @apply rounded-2xl border bg-card;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+  }
+
+  /* ─── Stat Card ─── */
+  .stat-card {
+    @apply rounded-2xl border bg-card p-5 relative overflow-hidden;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: hsl(var(--primary) / 0.04);
+    transform: translate(30%, -30%);
+    transition: all 0.4s ease;
+    pointer-events: none;
+  }
+  .stat-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: hsl(var(--primary) / 0.18);
+    transform: translateY(-2px);
+  }
+  .stat-card:hover::before {
+    background: hsl(var(--primary) / 0.07);
+    width: 160px;
+    height: 160px;
+  }
+  .dark .stat-card::before {
+    background: hsl(var(--primary) / 0.06);
+  }
+  .dark .stat-card:hover::before {
+    background: hsl(var(--primary) / 0.1);
+  }
+
+  /* ─── Typography ─── */
+  .page-title {
+    @apply text-[1.65rem] font-bold text-foreground;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+  }
+  .page-subtitle {
+    @apply text-sm text-muted-foreground mt-1;
+    line-height: 1.6;
+    letter-spacing: 0.005em;
+  }
+
+  /* ─── Data Table ─── */
+  .data-table {
+    @apply w-full text-sm;
+  }
+  .data-table thead {
+    @apply text-xs font-medium text-muted-foreground;
+    letter-spacing: 0.03em;
+  }
+  .data-table thead th {
+    @apply px-4 py-3.5 font-medium border-b;
+    background: hsl(var(--muted) / 0.4);
+  }
+  .data-table thead th:first-child {
+    @apply rounded-tl-lg;
+  }
+  .data-table thead th:last-child {
+    @apply rounded-tr-lg;
+  }
+  .data-table tbody {
+    @apply divide-y divide-border/60;
+  }
+  .data-table tbody tr {
+    @apply transition-all duration-200;
+  }
+  .data-table tbody tr:hover {
+    background: hsl(var(--primary) / 0.025);
+  }
+  .dark .data-table tbody tr:hover {
+    background: hsl(var(--primary) / 0.05);
+  }
+  .data-table tbody td {
+    @apply px-4 py-3.5;
+  }
+
+  /* ─── Gradient Text ─── */
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--foreground)) 0%, hsl(var(--primary)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* ─── Animations ─── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 16px -4px hsl(var(--primary) / 0.25); }
+  50%      { box-shadow: 0 0 28px -4px hsl(var(--primary) / 0.4); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%      { transform: translateY(-6px); }
+}
+
+.animate-fadeInUp   { animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-fadeIn     { animation: fadeIn 0.4s ease both; }
+.animate-slideInRight { animation: slideInRight 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-glowPulse  { animation: glowPulse 3s ease-in-out infinite; }
+.animate-float      { animation: float 4s ease-in-out infinite; }
+
+/* Stagger delays */
+.stagger-1 { animation-delay: 0ms; }
+.stagger-2 { animation-delay: 60ms; }
+.stagger-3 { animation-delay: 120ms; }
+.stagger-4 { animation-delay: 180ms; }
+.stagger-5 { animation-delay: 240ms; }
+.stagger-6 { animation-delay: 300ms; }
+.stagger-7 { animation-delay: 360ms; }
+.stagger-8 { animation-delay: 420ms; }

@@ -1,0 +1,13 @@
+{
+  "app": "CertiStock",
+  "channel": "stable",
+  "latestVersion": "1.0.0",
+  "minimumSupportedVersion": "1.0.0",
+  "mandatory": false,
+  "releaseDate": "2026-05-27",
+  "installerUrl": "https://certistock.local/updates/installers/CertiStock%20Setup%201.0.0.exe",
+  "sha256": "CHANGE_ME",
+  "signatureUrl": "https://certistock.local/updates/signatures/CertiStock%20Setup%201.0.0.exe.sig",
+  "releaseNotesUrl": "https://certistock.local/updates/release-notes/1.0.0.md",
+  "rollbackVersion": "0.9.9"
+}

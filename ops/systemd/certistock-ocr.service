@@ -1,0 +1,25 @@
+[Unit]
+Description=CertiStock OCR and Mass Balance Worker
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/apps/certistock/current/ocr-worker/app.py
+
+[Service]
+Type=simple
+User=certistock
+Group=certistock
+WorkingDirectory=/opt/apps/certistock/current/ocr-worker
+EnvironmentFile=/opt/apps/certistock/shared/env
+ExecStart=/opt/apps/certistock/shared/venvs/ocr-worker/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/certistock /opt/logs/certistock
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,24 @@
+[Unit]
+Description=CertiStock Fastify API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=certistock
+Group=certistock
+WorkingDirectory=/opt/apps/certistock/current
+EnvironmentFile=/opt/apps/certistock/shared/env
+ExecStart=/usr/bin/node /opt/apps/certistock/current/server/dist/index.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/certistock /opt/logs/certistock
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

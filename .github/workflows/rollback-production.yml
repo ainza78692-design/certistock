@@ -1,0 +1,22 @@
+name: Rollback CertiStock Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Release timestamp or 'previous'"
+        required: true
+        default: "previous"
+
+concurrency:
+  group: certistock-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: [self-hosted, linux, certistock-prod]
+    environment: production
+
+    steps:
+      - name: Rollback on client server
+        run: sudo /usr/local/bin/rollback-certistock.sh "${{ inputs.target }}"

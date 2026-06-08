@@ -1,0 +1,47 @@
+name: Deploy CertiStock Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: certistock-production
+  cancel-in-progress: false
+
+jobs:
+  verify-and-deploy:
+    runs-on: [self-hosted, linux, certistock-prod]
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify toolchain
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+          python3 --version
+          rsync --version | head -n 1
+          curl --version | head -n 1
+          jq --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build API
+        run: npm run server:build
+
+      - name: Build desktop assets
+        run: VITE_BACKEND_MODE=local npm run build
+
+      - name: Ensure deployment exclusions exist
+        run: test -f ops/linux/deploy-rsync.exclude
+
+      - name: Deploy on server
+        run: sudo REPO_ROOT="$GITHUB_WORKSPACE" SKIP_BUILD=1 /usr/local/bin/deploy-certistock.sh

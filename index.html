@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CertiStock — Certified Stock Tracking</title>
+    <meta name="description" content="Trace certified textile stock, transaction certificates, consumption, and audit-ready inventory records with precision." />
+    <meta name="author" content="CertiStock" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+    <meta property="og:title" content="CertiStock — Certified Stock Tracking" />
+    <meta property="og:description" content="Trace certified textile stock, transaction certificates, consumption, and audit-ready inventory records with precision." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script>
+      // Sync theme from localStorage before paint to avoid flash
+      (function() {
+        const t = localStorage.getItem('certistock-theme');
+        if (t === 'dark') document.documentElement.classList.add('dark');
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
