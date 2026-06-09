@@ -1,5 +1,5 @@
 name: Deploy CertiStock Production
- 
+
 on:
   push:
     branches: [main]
