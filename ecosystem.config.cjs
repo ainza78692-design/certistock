@@ -4,9 +4,6 @@ module.exports = {
       name: "certistock-api",
       cwd: "/opt/certistock",
       script: "server/dist/index.js",
-      env: {
-        LOCAL_API_HOST: "0.0.0.0"
-      },
       interpreter: "/usr/bin/node",
       exec_mode: "fork",
       instances: 1,
@@ -15,7 +12,7 @@ module.exports = {
       time: true,
       env: {
         NODE_ENV: "production",
-        LOCAL_API_HOST: "127.0.0.1",
+        LOCAL_API_HOST: "0.0.0.0",
         LOCAL_API_PORT: "8787",
       },
     },
