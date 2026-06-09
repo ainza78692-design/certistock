@@ -177,274 +177,192 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     ws = wb.active
     ws.title = "Mass Balance Sheet"
 
-    # ── Colours (exact from reference file) ──────────────────────────────────
-    BLUE        = PatternFill("solid", fgColor="FF5B9BD5")   # header / Sr.No / inward cols
-    LIGHT_BLUE  = PatternFill("solid", fgColor="FFBDD7EE")   # outward data cols
-    GREEN       = PatternFill("solid", fgColor="FFA9D08E")   # stock details cols
-    YELLOW      = PatternFill("solid", fgColor="FFFFFF00")   # production capacity cell
-    CREAM       = PatternFill("solid", fgColor="FFFFF2CC")   # storage capacity cell
+    # ── Exact colours from reference file ────────────────────────────────────
+    BLUE       = PatternFill("solid", fgColor="FF5B9BD5")  # title / inward section
+    LT_BLUE    = PatternFill("solid", fgColor="FFBDD7EE")  # outward section
+    GREEN      = PatternFill("solid", fgColor="FFA9D08E")  # stock details section
+    YELLOW     = PatternFill("solid", fgColor="FFFFFF00")  # production capacity
+    CREAM      = PatternFill("solid", fgColor="FFFFF2CC")  # storage capacity
 
-    FONT_TITLE  = Font(name="Book Antiqua", size=16, bold=True)
-    FONT_H14    = Font(name="Book Antiqua", size=14, bold=True)
-    FONT_H11    = Font(name="Book Antiqua", size=11, bold=True)
-    FONT_DATA   = Font(name="Calibri",      size=11)
-    FONT_DATA10 = Font(name="Calibri",      size=10)
+    # ── Fonts ────────────────────────────────────────────────────────────────
+    F_TITLE = Font(name="Book Antiqua", size=16, bold=True)
+    F_H14   = Font(name="Book Antiqua", size=14, bold=True)
+    F_H11   = Font(name="Book Antiqua", size=11, bold=True)
+    F_D11   = Font(name="Calibri", size=11)
+    F_D10   = Font(name="Calibri", size=10)
 
-    ALIGN_CENTER_MID  = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    ALIGN_LEFT_TOP    = Alignment(horizontal="left",   vertical="top")
-    ALIGN_LEFT_CENTER = Alignment(horizontal="left",   vertical="center", wrap_text=True)
-    ALIGN_CENTER_BOT  = Alignment(horizontal="center", vertical="bottom")
+    # ── Alignments ───────────────────────────────────────────────────────────
+    A_CC  = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    A_LT  = Alignment(horizontal="left",   vertical="top")
+    A_CB  = Alignment(horizontal="center", vertical="bottom")
+    A_LC  = Alignment(horizontal="left",   vertical="center", wrap_text=True)
+    A_CCS = Alignment(horizontal="center", vertical="center")  # no wrap
 
-    # ── Column widths (exact from reference file) ─────────────────────────────
-    col_widths = {
-        "A": 7.14,  "B": 30.14, "C": 19.29, "D": 32.29, "E": 15.0,
-        "F": 13.43, "G": 15.0,  "H": 13.14, "I": 8.71,  "J": 14.86,
-        "K": 28.43, "L": 13.57, "M": 31.86, "N": 17.0,  "O": 14.86,
-        "P": 14.86, "Q": 14.86, "R": 18.43, "S": 11.14, "T": 19.14,
-        "U": 24.57,
-    }
-    for col_letter, width in col_widths.items():
-        ws.column_dimensions[col_letter].width = width
+    # ── Column widths (pixel-perfect from reference) ──────────────────────────
+    for col, w in [("A",7.14),("B",30.14),("C",19.29),("D",32.29),("E",15.0),
+                   ("F",13.43),("G",15.0),("H",13.14),("I",8.71),("J",14.86),
+                   ("K",28.43),("L",13.57),("M",31.86),("N",17.0),("O",14.86),
+                   ("P",14.86),("Q",14.86),("R",18.43),("S",11.14),("T",19.14),
+                   ("U",24.57)]:
+        ws.column_dimensions[col].width = w
 
-    # ── Helper ────────────────────────────────────────────────────────────────
-    def styled(row, col, value, font, fill=None, alignment=None):
-        c = ws.cell(row=row, column=col, value=value)
+    def sc(row, col, val, font, fill=None, align=None):
+        """Set cell value + style."""
+        c = ws.cell(row=row, column=col, value=val)
         c.font = font
-        if fill:
-            c.fill = fill
-        if alignment:
-            c.alignment = alignment
+        if fill:  c.fill = fill
+        if align: c.alignment = align
         return c
 
     # ══════════════════════════════════════════════════════════════════════════
-    # ROW 1-2 : Title banner  (A1:U2 merged)
+    # ROW 1-2  Title banner  A1:U2
     # ══════════════════════════════════════════════════════════════════════════
     ws.merge_cells("A1:U2")
     ws.row_dimensions[1].height = 20
     ws.row_dimensions[2].height = 20
-    c = ws["A1"]
-    c.value     = "Mass Balance Sheet"
-    c.font      = FONT_TITLE
-    c.fill      = BLUE
-    c.alignment = ALIGN_CENTER_BOT
+    sc(1, 1, "Mass Balance Sheet", F_TITLE, BLUE, A_CB)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # ROW 3 : Production / Storage capacity labels
+    # ROW 3  Production / Storage capacity bar
     # ══════════════════════════════════════════════════════════════════════════
     ws.row_dimensions[3].height = 20.25
-    ws.merge_cells("A3:A3")   # A3 – blue filler
-    styled(3, 1, None, FONT_TITLE, BLUE, ALIGN_CENTER_BOT)
-
+    sc(3, 1, None, F_TITLE, BLUE, A_CB)          # A3 blue filler
     ws.merge_cells("B3:J3")
-    c = ws["B3"]
-    c.value     = "Production Capacity :"
-    c.font      = FONT_TITLE
-    c.fill      = YELLOW
-    c.alignment = ALIGN_LEFT_TOP
-
+    sc(3, 2, "Production Capacity :", F_TITLE, YELLOW, A_LT)
     ws.merge_cells("K3:U3")
-    c = ws["K3"]
-    c.value     = "Storage Capacity :"
-    c.font      = FONT_TITLE
-    c.fill      = CREAM
-    c.alignment = ALIGN_LEFT_TOP
+    sc(3, 11, "Storage Capacity :", F_TITLE, CREAM, A_LT)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # ROW 4 : Section headers
+    # ROW 4  Section header band
     # ══════════════════════════════════════════════════════════════════════════
     ws.row_dimensions[4].height = 18.75
-
-    ws.merge_cells("A4:A5")   # Sr.No spans rows 4-5
-    c = ws["A4"]
-    c.value     = "Sr.No "
-    c.font      = FONT_H11
-    c.fill      = BLUE
-    c.alignment = ALIGN_CENTER_MID
-
+    ws.merge_cells("A4:A5")                       # Sr.No spans rows 4-5
+    sc(4, 1,  "Sr.No ",                         F_H11, BLUE,    A_CC)
     ws.merge_cells("B4:H4")
-    c = ws["B4"]
-    c.value     = "Inword Data [Input TC]"
-    c.font      = FONT_H14
-    c.fill      = BLUE
-    c.alignment = ALIGN_LEFT_TOP
-
-    # I4 – blue filler (between inward and outward)
-    styled(4, 9, None, FONT_H14, BLUE, ALIGN_CENTER_MID)
-
+    sc(4, 2,  "Inword Data [Input TC]",          F_H14, BLUE,    A_LT)
+    sc(4, 9,  None,                              F_H14, BLUE,    A_CC)  # I4 blue gap
     ws.merge_cells("J4:S4")
-    c = ws["J4"]
-    c.value     = f"Outward Data[ Applied TC] {date.today().strftime('%d.%m.%y')}"
-    c.font      = FONT_H14
-    c.fill      = LIGHT_BLUE
-    c.alignment = ALIGN_LEFT_TOP
-
+    sc(4, 10, f"Outward Data[ Applied TC] {date.today().strftime('%d.%m.%y')}",
+              F_H14, LT_BLUE, A_LT)
     ws.merge_cells("T4:U4")
-    c = ws["T4"]
-    c.value     = "Stock Details"
-    c.font      = FONT_H14
-    c.fill      = GREEN
-    c.alignment = ALIGN_CENTER_MID
+    sc(4, 20, "Stock Details",                   F_H14, GREEN,   A_CC)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # ROW 5 : Column headers
+    # ROW 5  Column headers
     # ══════════════════════════════════════════════════════════════════════════
     ws.row_dimensions[5].height = 60.0
-
-    inward_headers = [
-        (2,  BLUE,       "Suppliers Name [Input TC ]"),
-        (3,  BLUE,       "Product Name and Quality"),
-        (4,  BLUE,       "Input TC No (IDFL or Other CB)"),
-        (5,  BLUE,       "Certified Weight(Kg)"),
-        (6,  BLUE,       "Net Wt (Kg.)"),
-        (7,  BLUE,       "Gross Weight (Kg.)"),
-        (8,  BLUE,       "Lot No/Batch No"),
-        (9,  BLUE,       "Open Stock in Kgs."),
-        (10, LIGHT_BLUE, "Consumed wt/ Raw Material used [ Kg]"),
-        (11, LIGHT_BLUE, "Product Name"),
-        (12, LIGHT_BLUE, "Loss(%)"),
-        (13, LIGHT_BLUE, "Buyers Name"),
-        (14, LIGHT_BLUE, "Invoice No."),
-        (15, LIGHT_BLUE, "Net weight[Kg]"),
-        (16, LIGHT_BLUE, "Certified Weight(Kg)"),
-        (17, LIGHT_BLUE, "Gross Weight(Kg)"),
-        (18, LIGHT_BLUE, "Transport Details(BL No/Challan No)"),
-        (19, LIGHT_BLUE, "Standard"),
-        (20, GREEN,      "Applied IDFL TC Id."),
-        (21, GREEN,      "Remaining Raw Material in Input TC(Kg)"),
-    ]
-    for col, fill, label in inward_headers:
-        styled(5, col, label, FONT_H11, fill, ALIGN_CENTER_MID)
+    for col, fill, label in [
+        ( 2, BLUE,    "Suppliers Name [Input TC ]"),
+        ( 3, BLUE,    "Product Name and Quality"),
+        ( 4, BLUE,    "Input TC No (IDFL or Other CB)"),
+        ( 5, BLUE,    "Certified Weight(Kg)"),
+        ( 6, BLUE,    "Net Wt (Kg.)"),
+        ( 7, BLUE,    "Gross Weight (Kg.)"),
+        ( 8, BLUE,    "Lot No/Batch No"),
+        ( 9, BLUE,    "Open Stock in Kgs."),
+        (10, LT_BLUE, "Consumed wt/ Raw Material used [ Kg]"),
+        (11, LT_BLUE, "Product Name"),
+        (12, LT_BLUE, "Loss(%)"),
+        (13, LT_BLUE, "Buyers Name"),
+        (14, LT_BLUE, "Invoice No."),
+        (15, LT_BLUE, "Net weight[Kg]"),
+        (16, LT_BLUE, "Certified Weight(Kg)"),
+        (17, LT_BLUE, "Gross Weight(Kg)"),
+        (18, LT_BLUE, "Transport Details(BL No/Challan No)"),
+        (19, LT_BLUE, "Standard"),
+        (20, GREEN,   "Applied IDFL TC Id."),
+        (21, GREEN,   "Remaining Raw Material in Input TC(Kg)"),
+    ]:
+        sc(5, col, label, F_H11, fill, A_CC)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # DATA ROWS  (row 6 onward, one per consumption entry)
+    # DATA ROWS  (row 6 onward)
     # ══════════════════════════════════════════════════════════════════════════
-    # Static inward data (same for all rows – from TC / lot)
     supplier    = payload.supplier.get("supplier_name") or ""
     product_raw = payload.lot.get("normalized_yarn_key") or payload.lot.get("additional_info_raw") or ""
     tc_number   = payload.tc.get("tc_number") or ""
     cert_wt     = number_value(payload.tc.get("certified_weight_kg"))
     net_wt      = number_value(payload.tc.get("net_shipping_weight_kg"))
     gross_wt    = number_value(payload.tc.get("gross_shipping_weight_kg"))
-    lot_no      = payload.lot.get("article_no") or payload.lot.get("product_no") or ""
     opening_stk = number_value(payload.lot.get("opening_stock_kg"))
     standard    = payload.tc.get("standard") or ""
-
-    MAX_PREFORMATTED_ROWS = 19   # rows 6-19 get explicit heights like reference
-    DATA_START_ROW = 6
-
-    total_rows = max(len(payload.consumptions), 1)
+    START       = 6
+    n           = len(payload.consumptions)
 
     for idx, entry in enumerate(payload.consumptions):
-        data_row = DATA_START_ROW + idx
+        r    = START + idx
         sale = entry.get("outward_sale") or {}
 
-        # Row height: reference uses ~90-115 for rows 6-13, 45 for 14-19, 16.5 after
-        if idx < 8:
-            ws.row_dimensions[data_row].height = 100.0
-        elif idx < 14:
-            ws.row_dimensions[data_row].height = 45.0
+        # Row heights matching reference exactly
+        if   idx < 8:  ws.row_dimensions[r].height = 100.0
+        elif idx < 14: ws.row_dimensions[r].height = 45.0
+        else:          ws.row_dimensions[r].height = 16.5
+
+        # A – serial number (first row only)
+        if idx == 0:
+            sc(r, 1, 1, F_D11, align=A_CCS)
+
+        # B-H – inward static data (first row only, same for every row in reference)
+        if idx == 0:
+            sc(r,  2, supplier,    F_D10, align=A_CCS)
+            sc(r,  3, product_raw, F_D11, align=A_LC)
+            sc(r,  4, tc_number,   F_D10, align=A_CCS)
+            sc(r,  5, cert_wt,     F_D11, align=A_CC)
+            sc(r,  6, net_wt,      F_D11, align=A_CC)
+            sc(r,  7, gross_wt,    F_D11, align=A_CC)
+            # H (col 8) = Lot No – reference leaves this blank in data rows
+
+        # I – open/running stock
+        if idx == 0:
+            sc(r, 9, opening_stk, F_D11, align=A_CC)
         else:
-            ws.row_dimensions[data_row].height = 16.5
+            sc(r, 9, f"=U{r - 1}", F_D10, align=A_CC)
 
-        # Col A: serial number (only on first row)
-        if idx == 0:
-            ws.cell(row=data_row, column=1, value=1).font = FONT_DATA
-            ws.cell(row=data_row, column=1).alignment = Alignment(horizontal="left", vertical="center")
+        # J – consumed weight
+        sc(r, 10, number_value(entry.get("consumed_weight_kg")), F_D11, align=A_CC)
 
-        # Inward cols B-H (static, only first row)
-        if idx == 0:
-            def dc(col, val, font=FONT_DATA, align=ALIGN_CENTER_MID):
-                c = ws.cell(row=data_row, column=col, value=val)
-                c.font = font
-                c.alignment = align
-            dc(2,  supplier,    FONT_DATA10, Alignment(horizontal="center", vertical="center"))
-            dc(3,  product_raw, FONT_DATA,   Alignment(horizontal="left",   vertical="center", wrap_text=True))
-            dc(4,  tc_number,   FONT_DATA10, ALIGN_CENTER_MID)
-            dc(5,  cert_wt)
-            dc(6,  net_wt)
-            dc(7,  gross_wt)
-            dc(8,  lot_no,      FONT_DATA10, ALIGN_CENTER_MID)
+        # K – outward product name
+        sc(r, 11, sale.get("product_name") or product_raw, F_D11, align=A_CC)
 
-        # Col I: open / running stock (=U{prev_row} formula, except first row uses actual value)
-        if idx == 0:
-            c = ws.cell(row=data_row, column=9, value=opening_stk)
-            c.font      = FONT_DATA
-            c.alignment = ALIGN_CENTER_MID
-        else:
-            prev = DATA_START_ROW + idx - 1
-            c = ws.cell(row=data_row, column=9, value=f"=U{prev}")
-            c.font      = FONT_DATA10
-            c.alignment = ALIGN_CENTER_MID
+        # L – loss % (live formula)
+        sc(r, 12, f"=(1-P{r}/J{r})*100", F_D11, align=A_CC)
 
-        # Col J: consumed weight
-        consumed = number_value(entry.get("consumed_weight_kg"))
-        ws.cell(row=data_row, column=10, value=consumed).font = FONT_DATA
-        ws.cell(row=data_row, column=10).alignment = ALIGN_CENTER_MID
+        # M – buyer
+        sc(r, 13, sale.get("customer_name_snapshot") or "", F_D11, align=A_CC)
 
-        # Col K: product name (outward)
-        prod_name = (sale.get("product_name") or product_raw)
-        ws.cell(row=data_row, column=11, value=prod_name).font = FONT_DATA
-        ws.cell(row=data_row, column=11).alignment = ALIGN_CENTER_MID
+        # N – invoice no
+        sc(r, 14, sale.get("outward_invoice_no") or "", F_D11, align=A_CC)
 
-        # Col L: loss % formula  =(1-P{row}/J{row})*100
-        ws.cell(row=data_row, column=12, value=f"=(1-P{data_row}/J{data_row})*100").font = FONT_DATA
-        ws.cell(row=data_row, column=12).alignment = ALIGN_CENTER_MID
+        # O – outward net weight
+        sc(r, 15, number_value(sale.get("outward_net_weight_kg")), F_D11, align=A_CC)
 
-        # Col M: buyer name
-        buyer = sale.get("customer_name_snapshot") or ""
-        ws.cell(row=data_row, column=13, value=buyer).font = FONT_DATA
-        ws.cell(row=data_row, column=13).alignment = ALIGN_CENTER_MID
+        # P – outward certified weight
+        out_cert = number_value(entry.get("outward_certified_weight_kg")) \
+                   or number_value(sale.get("outward_certified_weight_kg"))
+        sc(r, 16, out_cert, F_D11, align=A_CC)
 
-        # Col N: invoice no
-        inv_no = sale.get("outward_invoice_no") or ""
-        ws.cell(row=data_row, column=14, value=inv_no).font = FONT_DATA
-        ws.cell(row=data_row, column=14).alignment = ALIGN_CENTER_MID
+        # Q – outward gross weight
+        sc(r, 17, number_value(sale.get("outward_gross_weight_kg")), F_D11, align=A_CC)
 
-        # Col O: outward net weight
-        out_net = number_value(sale.get("outward_net_weight_kg"))
-        ws.cell(row=data_row, column=15, value=out_net).font = FONT_DATA
-        ws.cell(row=data_row, column=15).alignment = ALIGN_CENTER_MID
+        # R – transport / challan
+        sc(r, 18, sale.get("transport_doc_no") or sale.get("vehicle_no") or "", F_D11, align=A_CC)
 
-        # Col P: outward certified weight
-        out_cert = number_value(entry.get("outward_certified_weight_kg") or sale.get("outward_certified_weight_kg"))
-        ws.cell(row=data_row, column=16, value=out_cert).font = FONT_DATA
-        ws.cell(row=data_row, column=16).alignment = ALIGN_CENTER_MID
+        # S – standard
+        sc(r, 19, standard, F_D11, align=A_CC)
 
-        # Col Q: outward gross weight
-        out_gross = number_value(sale.get("outward_gross_weight_kg"))
-        ws.cell(row=data_row, column=17, value=out_gross).font = FONT_DATA
-        ws.cell(row=data_row, column=17).alignment = ALIGN_CENTER_MID
+        # T – applied outward TC
+        sc(r, 20, sale.get("outward_tc_no") or "", F_D11, align=A_CC)
 
-        # Col R: transport / challan
-        transport = sale.get("transport_doc_no") or sale.get("vehicle_no") or ""
-        ws.cell(row=data_row, column=18, value=transport).font = FONT_DATA
-        ws.cell(row=data_row, column=18).alignment = ALIGN_CENTER_MID
+        # U – remaining stock formula
+        sc(r, 21, f"=I{r}-J{r}", F_D11, align=A_CC)
 
-        # Col S: standard
-        ws.cell(row=data_row, column=19, value=standard).font = FONT_DATA
-        ws.cell(row=data_row, column=19).alignment = ALIGN_CENTER_MID
-
-        # Col T: applied TC id (outward TC no)
-        out_tc = sale.get("outward_tc_no") or ""
-        ws.cell(row=data_row, column=20, value=out_tc).font = FONT_DATA
-        ws.cell(row=data_row, column=20).alignment = ALIGN_CENTER_MID
-
-        # Col U: remaining stock formula  =I{row}-J{row}
-        ws.cell(row=data_row, column=21, value=f"=I{data_row}-J{data_row}").font = FONT_DATA
-        ws.cell(row=data_row, column=21).alignment = ALIGN_CENTER_MID
-
-    # ── Pre-fill empty formula rows below data (rows with no consumption) ─────
-    # Matches the reference which has blank rows 20-35 with I/L/U formulas
-    last_data_row = DATA_START_ROW + total_rows - 1
-    for extra_row in range(last_data_row + 1, last_data_row + 17):
-        ws.row_dimensions[extra_row].height = 16.5
-        prev = extra_row - 1
-        ws.cell(row=extra_row, column=9,  value=f"=U{prev}").font  = FONT_DATA10
-        ws.cell(row=extra_row, column=9).alignment = ALIGN_CENTER_MID
-        ws.cell(row=extra_row, column=12, value=f"=(1-P{extra_row}/J{extra_row})*100").font = FONT_DATA
-        ws.cell(row=extra_row, column=12).alignment = ALIGN_LEFT_CENTER
-        ws.cell(row=extra_row, column=21, value=f"=I{extra_row}-J{extra_row}").font = FONT_DATA
-        ws.cell(row=extra_row, column=21).alignment = ALIGN_CENTER_MID
+    # ── Trailing blank formula rows (matches reference rows 20-35) ────────────
+    last = START + n - 1
+    for er in range(last + 1, last + 17):
+        ws.row_dimensions[er].height = 16.5
+        sc(er, 9,  f"=U{er - 1}",              F_D10, align=A_CC)
+        sc(er, 12, f"=(1-P{er}/J{er})*100",    F_D11, align=A_LC)
+        sc(er, 21, f"=I{er}-J{er}",            F_D11, align=A_CC)
 
     # ── Serialise ─────────────────────────────────────────────────────────────
     stream = io.BytesIO()
@@ -456,7 +374,7 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     file_name   = f"{tc_number}_{shipment_no}_{product_key}.xlsx".replace("/", "-")
 
     return {
-        "fileName": file_name,
+        "fileName":      file_name,
         "contentBase64": content_base64,
-        "rowCount": len(payload.consumptions),
+        "rowCount":      n,
     }
