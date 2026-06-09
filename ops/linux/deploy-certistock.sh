@@ -5,6 +5,9 @@ APP_DIR=/opt/certistock
 BACKUP_DIR=/opt/backups/deploys
 DEPLOY_HISTORY=/opt/backups/deploy-history.log
 
+# Ensure standard paths are available even when run via sudo
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 if [ ! -d "$APP_DIR/.git" ]; then
     echo "Directory $APP_DIR does not have a git repository. Please clone the repository first or ensure it is initialized."
     exit 1
