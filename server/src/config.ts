@@ -25,7 +25,7 @@ const isProduction = (process.env.NODE_ENV ?? "development") === "production";
 
 export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
-  host: process.env.LOCAL_API_HOST ?? (isProduction ? "127.0.0.1" : "0.0.0.0"),
+  host: process.env.LOCAL_API_HOST ?? "0.0.0.0",
   port: Number(process.env.LOCAL_API_PORT ?? 8787),
   databaseUrl: required("DATABASE_URL", isProduction ? undefined : "postgres://certistock:certistock@127.0.0.1:5432/certistock_utf8"),
   jwtSecret: required("JWT_SECRET", isProduction ? undefined : "change-this-local-development-secret"),
