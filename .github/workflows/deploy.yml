@@ -27,6 +27,9 @@ jobs:
           rsync --version | head -n 1
           curl --version | head -n 1
           jq --version
+          pm2 --version
+          test -f ecosystem.config.cjs
+          test -f ops/linux/deploy-rsync.exclude
 
       - name: Install dependencies
         run: npm ci
@@ -37,11 +40,8 @@ jobs:
       - name: Build API
         run: npm run server:build
 
-      - name: Build desktop assets
+      - name: Build frontend assets
         run: VITE_BACKEND_MODE=local npm run build
 
-      - name: Ensure deployment exclusions exist
-        run: test -f ops/linux/deploy-rsync.exclude
-
       - name: Deploy on server
-        run: sudo REPO_ROOT="$GITHUB_WORKSPACE" SKIP_BUILD=1 /usr/local/bin/deploy-certistock.sh
+        run: sudo env REPO_ROOT="$GITHUB_WORKSPACE" /usr/local/bin/deploy-certistock.sh

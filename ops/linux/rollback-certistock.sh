@@ -20,9 +20,7 @@ if [[ -z "${TARGET_DIR:-}" || ! -d "$TARGET_DIR" ]]; then
 fi
 
 ln -sfn "$TARGET_DIR" "$CURRENT_LINK"
-systemctl restart certistock-api.service
-if systemctl is-enabled --quiet certistock-ocr.service 2>/dev/null || systemctl is-active --quiet certistock-ocr.service 2>/dev/null; then
-  systemctl restart certistock-ocr.service || true
-fi
+sudo -u certistock bash -lc "set -a; source '$APP_ROOT/shared/env'; set +a; pm2 startOrReload '$CURRENT_LINK/ecosystem.config.cjs' --only certistock-api --update-env"
+systemctl restart certistock-ocr.service || true
 "$HEALTH_CHECK"
 echo "Rolled back CertiStock to $TARGET_DIR"
