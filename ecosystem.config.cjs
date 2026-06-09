@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: "certistock-api",
-      cwd: "/opt/apps/certistock/current",
+      cwd: "/opt/certistock",
       script: "server/dist/index.js",
       interpreter: "/usr/bin/node",
       exec_mode: "fork",
