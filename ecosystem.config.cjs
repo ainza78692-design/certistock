@@ -4,6 +4,9 @@ module.exports = {
       name: "certistock-api",
       cwd: "/opt/certistock",
       script: "server/dist/index.js",
+      env: {
+        LOCAL_API_HOST: "0.0.0.0"
+      },
       interpreter: "/usr/bin/node",
       exec_mode: "fork",
       instances: 1,
