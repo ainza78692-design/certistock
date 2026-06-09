@@ -70,7 +70,7 @@ npm run build
 npm run server:build
 
 echo "Reloading PM2..."
-sudo -u certistock bash -lc "set -a; source '$APP_DIR/.env'; set +a; pm2 startOrReload ecosystem.config.cjs --only certistock-api --update-env"
+sudo -u certistock bash -lc "set -a; source '$APP_DIR/.env'; set +a; pm2 startOrReload ecosystem.config.cjs --update-env"
 sudo -u certistock pm2 save
 
 echo "Restarting OCR worker if present..."
@@ -79,6 +79,7 @@ if systemctl list-unit-files | grep -q '^certistock-ocr.service'; then
 fi
 
 echo "Running health check..."
+sleep 3
 curl -f http://localhost:8787/health || {
     echo "Health check failed! Deployment might be broken."
     exit 1
