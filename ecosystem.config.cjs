@@ -16,5 +16,16 @@ module.exports = {
         LOCAL_API_PORT: "8787",
       },
     },
+    {
+      name: "certistock-ocr",
+      cwd: "/opt/certistock/ocr-worker",
+      script: ".venv/bin/uvicorn",
+      args: "main:app --host 127.0.0.1 --port 8001",
+      interpreter: "none",
+      exec_mode: "fork",
+      instances: 1,
+      watch: false,
+      max_memory_restart: "512M",
+    },
   ],
 };
