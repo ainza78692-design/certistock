@@ -56,11 +56,13 @@ echo "         Consider adopting a framework like Prisma, Knex, or Drizzle in th
 psql "$DATABASE_URL" -f "server/sql/001_local_postgres_schema.sql"
 
 echo "Installing Node dependencies..."
-npm ci
+# Force include devDependencies because Vite requires them to build the frontend
+npm ci --include=dev
 
 if [ -f "ocr-worker/requirements.txt" ]; then
-    echo "Installing Python dependencies..."
-    pip install -r ocr-worker/requirements.txt || true
+    echo "Installing Python dependencies in a virtual environment..."
+    python3 -m venv ocr-worker/.venv
+    ocr-worker/.venv/bin/pip install -r ocr-worker/requirements.txt || true
 fi
 
 echo "Building frontend and backend..."
