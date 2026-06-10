@@ -59,6 +59,12 @@ def has_pdf_rendering() -> bool:
 def extract_pdf_text_with_pypdf(content: bytes) -> str:
     if PdfReader is None:
         return ""
+    try:
+        reader = PdfReader(io.BytesIO(content))
+        pages = [(page.extract_text() or "") for page in reader.pages]
+        return "\n".join(pages).strip()
+    except Exception:
+        return ""
 
 
 def extract_pdf_text_with_paddleocr(content: bytes) -> tuple[str, float | None, int]:
@@ -91,12 +97,6 @@ def extract_pdf_text_with_paddleocr(content: bytes) -> tuple[str, float | None, 
 
     average = sum(confidences) / len(confidences) if confidences else None
     return "\n".join(chunks).strip(), average, len(doc)
-    try:
-        reader = PdfReader(io.BytesIO(content))
-        pages = [(page.extract_text() or "") for page in reader.pages]
-        return "\n".join(pages).strip()
-    except Exception:
-        return ""
 
 
 def format_value(value: Any) -> str:
