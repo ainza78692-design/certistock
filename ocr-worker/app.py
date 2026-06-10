@@ -317,16 +317,16 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
         if idx == 0:
             sc(r, 9, opening_stk, F_D11, align=A_CC)
         else:
-            sc(r, 9, f"=U{r - 1}", F_D10, align=A_CC)
+            sc(r, 9, f"=IFERROR(U{r - 1}, \"\")", F_D10, align=A_CC)
 
         # J – consumed weight
         sc(r, 10, number_value(entry.get("consumed_weight_kg")), F_D11, align=A_CC)
 
         # K – outward product name
-        sc(r, 11, sale.get("product_name") or product_raw, F_D11, align=A_CC)
+        sc(r, 11, sale.get("product_name") or product_raw if entry else "", F_D11, align=A_CC)
 
         # L – loss % (live formula)
-        sc(r, 12, f"=(1-P{r}/J{r})*100", F_D11, align=A_CC)
+        sc(r, 12, f"=IFERROR((1-P{r}/J{r})*100, \"\")", F_D11, align=A_CC)
 
         # M – buyer
         sc(r, 13, sale.get("customer_name_snapshot") or "", F_D11, align=A_CC)
@@ -349,21 +349,21 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
         sc(r, 18, sale.get("transport_doc_no") or sale.get("vehicle_no") or "", F_D11, align=A_CC)
 
         # S – standard
-        sc(r, 19, standard, F_D11, align=A_CC)
+        sc(r, 19, standard if entry else "", F_D11, align=A_CC)
 
         # T – applied outward TC
         sc(r, 20, sale.get("outward_tc_no") or "", F_D11, align=A_CC)
 
         # U – remaining stock formula
-        sc(r, 21, f"=I{r}-J{r}", F_D11, align=A_CC)
+        sc(r, 21, f"=IFERROR(I{r}-J{r}, \"\")", F_D11, align=A_CC)
 
     # ── Trailing blank formula rows (matches reference rows 20-35) ────────────
     last = START + n - 1
     for er in range(last + 1, last + 17):
         ws.row_dimensions[er].height = 16.5
-        sc(er, 9,  f"=U{er - 1}",              F_D10, align=A_CC)
-        sc(er, 12, f"=(1-P{er}/J{er})*100",    F_D11, align=A_LC)
-        sc(er, 21, f"=I{er}-J{er}",            F_D11, align=A_CC)
+        sc(er, 9,  f"=IFERROR(U{er - 1}, \"\")",              F_D10, align=A_CC)
+        sc(er, 12, f"=IFERROR((1-P{er}/J{er})*100, \"\")",    F_D11, align=A_LC)
+        sc(er, 21, f"=IFERROR(I{er}-J{er}, \"\")",            F_D11, align=A_CC)
 
     # ── Serialise ─────────────────────────────────────────────────────────────
     stream = io.BytesIO()
