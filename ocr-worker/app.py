@@ -9,7 +9,8 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.worksheet.page import PageMargins
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from pydantic import BaseModel
 
 try:
@@ -17,7 +18,7 @@ try:
 except Exception:  # pragma: no cover - optional import guard
     PdfReader = None  # type: ignore
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 WORKER_API_KEY = os.getenv("OCR_WORKER_API_KEY", "")
 
 app = FastAPI(title="CertiStock OCR Worker", version=APP_VERSION)
@@ -176,6 +177,8 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     wb = Workbook()
     ws = wb.active
     ws.title = "Mass Balance Sheet"
+    ws.page_setup.paperSize = 9
+    ws.page_margins = PageMargins(left=0.7, right=0.7, top=0.75, bottom=0.75)
 
     # ── Exact colours from reference file ────────────────────────────────────
     BLUE       = PatternFill("solid", fgColor="FF5B9BD5")  # title / inward section
@@ -190,6 +193,8 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     F_H11   = Font(name="Book Antiqua", size=11, bold=True)
     F_D11   = Font(name="Calibri", size=11)
     F_D10   = Font(name="Calibri", size=10)
+    THIN = Side(style="thin", color="FF000000")
+    GRID = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
     # ── Alignments ───────────────────────────────────────────────────────────
     A_CC  = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -200,18 +205,30 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
 
     # ── Column widths (pixel-perfect from reference) ──────────────────────────
     for col, w in [("A",7.14),("B",30.14),("C",19.29),("D",32.29),("E",15.0),
-                   ("F",13.43),("G",15.0),("H",13.14),("I",8.71),("J",14.86),
+                   ("F",13.43),("G",15.0),("H",13.14),("I",13.0),("J",14.86),
                    ("K",28.43),("L",13.57),("M",31.86),("N",17.0),("O",14.86),
-                   ("P",14.86),("Q",14.86),("R",18.43),("S",11.14),("T",19.14),
+                   ("P",13.0),("Q",13.0),("R",18.43),("S",11.14),("T",19.14),
                    ("U",24.57)]:
         ws.column_dimensions[col].width = w
 
-    def sc(row, col, val, font, fill=None, align=None):
+    def sc(row, col, val, font, fill=None, align=None, num_format=None):
         """Set cell value + style."""
         c = ws.cell(row=row, column=col, value=val)
         c.font = font
         if fill:  c.fill = fill
         if align: c.alignment = align
+        c.border = GRID
+        if num_format:
+            c.number_format = num_format
+        return c
+
+    def style_blank(row, col, font=F_D11, align=A_CC, num_format=None):
+        c = ws.cell(row=row, column=col)
+        c.font = font
+        c.alignment = align
+        c.border = GRID
+        if num_format:
+            c.number_format = num_format
         return c
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -279,7 +296,7 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     # DATA ROWS  (row 6 onward)
     # ══════════════════════════════════════════════════════════════════════════
     supplier    = payload.supplier.get("supplier_name") or ""
-    product_raw = payload.lot.get("normalized_yarn_key") or payload.lot.get("additional_info_raw") or ""
+    product_raw = payload.lot.get("additional_info_raw") or payload.lot.get("normalized_yarn_key") or ""
     tc_number   = payload.tc.get("tc_number") or ""
     cert_wt     = number_value(payload.tc.get("certified_weight_kg"))
     net_wt      = number_value(payload.tc.get("net_shipping_weight_kg"))
@@ -287,10 +304,11 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     opening_stk = number_value(payload.lot.get("opening_stock_kg"))
     standard    = payload.tc.get("standard") or ""
     START       = 6
-    n           = max(1, len(payload.consumptions))
+    END_ROW     = 35
+    n           = min(max(1, len(payload.consumptions)), END_ROW - START + 1)
 
-    for idx in range(n):
-        r = START + idx
+    for r in range(START, END_ROW + 1):
+        idx = r - START
         entry = payload.consumptions[idx] if idx < len(payload.consumptions) else {}
         sale = entry.get("outward_sale") or {}
 
@@ -298,6 +316,9 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
         if   idx < 8:  ws.row_dimensions[r].height = 100.0
         elif idx < 14: ws.row_dimensions[r].height = 45.0
         else:          ws.row_dimensions[r].height = 16.5
+
+        for col in range(1, 22):
+            style_blank(r, col)
 
         # A – serial number (first row only)
         if idx == 0:
@@ -308,63 +329,66 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
             sc(r,  2, supplier,    F_D10, align=A_CCS)
             sc(r,  3, product_raw, F_D11, align=A_LC)
             sc(r,  4, tc_number,   F_D10, align=A_CCS)
-            sc(r,  5, cert_wt,     F_D11, align=A_CC)
-            sc(r,  6, net_wt,      F_D11, align=A_CC)
-            sc(r,  7, gross_wt,    F_D11, align=A_CC)
+            sc(r,  5, cert_wt,     F_D11, align=A_CC, num_format="#,##0.00")
+            sc(r,  6, net_wt,      F_D11, align=A_CC, num_format="#,##0.00")
+            sc(r,  7, gross_wt,    F_D11, align=A_CC, num_format="#,##0.00")
             # H (col 8) = Lot No – reference leaves this blank in data rows
 
         # I – open/running stock
         if idx == 0:
-            sc(r, 9, opening_stk, F_D11, align=A_CC)
+            sc(r, 9, opening_stk, F_D11, align=A_CC, num_format="#,##0.00")
         else:
-            sc(r, 9, f"=IFERROR(U{r - 1}, \"\")", F_D10, align=A_CC)
+            sc(r, 9, f"=U{r - 1}", F_D10, align=A_CC, num_format="#,##0.00")
 
         # J – consumed weight
-        sc(r, 10, number_value(entry.get("consumed_weight_kg")), F_D11, align=A_CC)
+        if entry:
+            sc(r, 10, number_value(entry.get("consumed_weight_kg")), F_D11, align=A_CC, num_format="#,##0.00")
 
         # K – outward product name
-        sc(r, 11, sale.get("product_name") or product_raw if entry else "", F_D11, align=A_CC)
+        if entry:
+            sc(r, 11, sale.get("product_name") or product_raw, F_D11, align=A_CC)
 
         # L – loss % (live formula)
-        sc(r, 12, f"=IFERROR((1-P{r}/J{r})*100, \"\")", F_D11, align=A_CC)
+        sc(r, 12, f"=(1-P{r}/J{r})*100", F_D11, align=A_CC, num_format="0.00")
 
         # M – buyer
-        sc(r, 13, sale.get("customer_name_snapshot") or "", F_D11, align=A_CC)
+        if entry:
+            sc(r, 13, sale.get("customer_name_snapshot") or "", F_D11, align=A_CC)
 
         # N – invoice no
-        sc(r, 14, sale.get("outward_invoice_no") or "", F_D11, align=A_CC)
+        if entry:
+            sc(r, 14, sale.get("outward_invoice_no") or "", F_D11, align=A_CC)
 
         # O – outward net weight
-        sc(r, 15, number_value(sale.get("outward_net_weight_kg")), F_D11, align=A_CC)
+        if entry:
+            sc(r, 15, number_value(sale.get("outward_net_weight_kg")), F_D11, align=A_CC, num_format="#,##0.00")
 
         # P – outward certified weight
         out_cert = number_value(entry.get("outward_certified_weight_kg")) \
                    or number_value(sale.get("outward_certified_weight_kg"))
-        sc(r, 16, out_cert, F_D11, align=A_CC)
+        if entry:
+            sc(r, 16, out_cert, F_D11, align=A_CC, num_format="#,##0.00")
 
         # Q – outward gross weight
-        sc(r, 17, number_value(sale.get("outward_gross_weight_kg")), F_D11, align=A_CC)
+        if entry:
+            sc(r, 17, number_value(sale.get("outward_gross_weight_kg")), F_D11, align=A_CC, num_format="#,##0.00")
 
         # R – transport / challan
-        sc(r, 18, sale.get("transport_doc_no") or sale.get("vehicle_no") or "", F_D11, align=A_CC)
+        if entry:
+            sc(r, 18, sale.get("transport_doc_no") or sale.get("vehicle_no") or "", F_D11, align=A_CC)
 
         # S – standard
-        sc(r, 19, standard if entry else "", F_D11, align=A_CC)
+        if entry:
+            sc(r, 19, standard, F_D11, align=A_CC)
 
         # T – applied outward TC
-        sc(r, 20, sale.get("outward_tc_no") or "", F_D11, align=A_CC)
+        if entry:
+            sc(r, 20, sale.get("outward_tc_no") or "", F_D11, align=A_CC)
 
         # U – remaining stock formula
-        sc(r, 21, f"=IFERROR(I{r}-J{r}, \"\")", F_D11, align=A_CC)
+        sc(r, 21, f"=I{r}-J{r}", F_D11, align=A_CC, num_format="#,##0.00")
 
     # ── Trailing blank formula rows (matches reference rows 20-35) ────────────
-    last = START + n - 1
-    for er in range(last + 1, last + 17):
-        ws.row_dimensions[er].height = 16.5
-        sc(er, 9,  f"=IFERROR(U{er - 1}, \"\")",              F_D10, align=A_CC)
-        sc(er, 12, f"=IFERROR((1-P{er}/J{er})*100, \"\")",    F_D11, align=A_LC)
-        sc(er, 21, f"=IFERROR(I{er}-J{er}, \"\")",            F_D11, align=A_CC)
-
     # ── Serialise ─────────────────────────────────────────────────────────────
     stream = io.BytesIO()
     wb.save(stream)
