@@ -267,6 +267,47 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  app.delete("/api/stock-lots", { preHandler: requireUser }, async (request, reply) => {
+    const companyId = request.user!.companyId;
+    const { ids } = request.body as { ids: string[] };
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return reply.code(400).send({ error: "No ids provided" });
+    }
+
+    let deletedCount = 0;
+    
+    await withTransaction(async (client) => {
+      // Find lots that actually belong to this company and have NO consumption
+      const safeLotsResult = await client.query(
+        `select l.id
+         from product_lots l
+         left join consumption_entries ce on ce.product_lot_id = l.id
+         where l.company_id = $1 and l.id = any($2)
+         group by l.id
+         having count(ce.id) = 0`,
+        [companyId, ids]
+      );
+      
+      const safeIds = safeLotsResult.rows.map(r => r.id);
+      if (safeIds.length === 0) return;
+
+      await client.query(
+        `delete from stock_ledger where company_id = $1 and product_lot_id = any($2)`,
+        [companyId, safeIds]
+      );
+
+      const deleteResult = await client.query(
+        `delete from product_lots where company_id = $1 and id = any($2)`,
+        [companyId, safeIds]
+      );
+      
+      deletedCount = deleteResult.rowCount || 0;
+    });
+
+    return { ok: true, deletedCount };
+  });
+
   app.get("/api/consumption", { preHandler: requireUser }, async (request) => {
     const companyId = request.user!.companyId;
     const result = await query(

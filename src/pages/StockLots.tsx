@@ -70,6 +70,8 @@ export default function StockLots() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [showBulkDialog, setShowBulkDialog] = useState(false);
 
   useEffect(() => { setQ(params.get("q") || ""); }, [params]);
 
@@ -122,10 +124,8 @@ export default function StockLots() {
     cons: acc.cons + Number(l.consumed_stock_kg || 0),
   }), { cert: 0, rem: 0, cons: 0 });
 
-  const exportExcel = () => {
-    if (!lots || !lots.length) return;
-    
-    // Use the filtered list (all) if q is set, otherwise all matches
+  const getVisibleLots = () => {
+    if (!lots || !lots.length) return [];
     const dataToExport = q.trim() 
       ? lots.filter((l: StockLotRow) => {
           const s = q.toUpperCase().trim();
@@ -139,6 +139,13 @@ export default function StockLots() {
           );
         })
       : lots;
+
+    return dataToExport;
+  };
+
+  const exportExcel = () => {
+    const dataToExport = getVisibleLots();
+    if (!dataToExport || !dataToExport.length) return;
 
     const formattedData = dataToExport.map((l: StockLotRow) => ({
       "Product": l.normalized_yarn_key || "—",
@@ -220,6 +227,61 @@ export default function StockLots() {
     }
   };
 
+  const visibleLots = getVisibleLots() || [];
+  const safeToDelete = visibleLots.filter(l => Number(l.consumed_stock_kg || 0) === 0);
+  const consumedLotsCount = visibleLots.length - safeToDelete.length;
+
+  const handleBulkDelete = async () => {
+    if (!profile?.company_id || safeToDelete.length === 0) return;
+    setIsBulkDeleting(true);
+
+    try {
+      if (isLocalBackend) {
+        await localApi("/api/stock-lots", { 
+          method: "DELETE",
+          body: JSON.stringify({ ids: safeToDelete.map(l => l.id) })
+        });
+        toast.success(`Deleted ${safeToDelete.length} stock lots`);
+        queryClient.invalidateQueries({ queryKey: ["lots", profile.company_id] });
+      } else {
+        // Find safe lots by checking consumption_entries
+        const { data: consumptions } = await supabase
+          .from("consumption_entries")
+          .select("product_lot_id")
+          .eq("company_id", profile.company_id)
+          .in("product_lot_id", safeToDelete.map(l => l.id));
+        
+        const consumedIds = new Set((consumptions || []).map(c => c.product_lot_id));
+        const finalSafeIds = safeToDelete.filter(l => !consumedIds.has(l.id)).map(l => l.id);
+
+        if (finalSafeIds.length === 0) {
+          toast.error("No safe lots left to delete.");
+          return;
+        }
+
+        await supabase
+          .from("stock_ledger")
+          .delete()
+          .eq("company_id", profile.company_id)
+          .in("product_lot_id", finalSafeIds);
+
+        await supabase
+          .from("product_lots")
+          .delete()
+          .eq("company_id", profile.company_id)
+          .in("id", finalSafeIds);
+
+        toast.success(`Deleted ${finalSafeIds.length} stock lots`);
+        queryClient.invalidateQueries({ queryKey: ["lots", profile.company_id] });
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Bulk delete failed");
+    } finally {
+      setIsBulkDeleting(false);
+      setShowBulkDialog(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       <PageHeader
@@ -227,6 +289,37 @@ export default function StockLots() {
         subtitle="Live remaining stock by product key, certificate, and supplier."
         actions={
           <div className="flex items-center gap-2">
+            <AlertDialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="rounded-xl gap-2 border-border/60 hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive transition-all duration-300" disabled={visibleLots.length === 0}>
+                  <Trash2 className="h-4 w-4" />Bulk Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="rounded-2xl">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Bulk Delete Stock Lots</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    You are about to delete <strong>{safeToDelete.length}</strong> empty stock lots.
+                    {consumedLotsCount > 0 && (
+                      <span className="block mt-2 text-warning font-medium">
+                        {consumedLotsCount} consumed lot(s) will be skipped and protected.
+                      </span>
+                    )}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="rounded-xl" disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(e) => { e.preventDefault(); handleBulkDelete(); }}
+                    disabled={safeToDelete.length === 0 || isBulkDeleting}
+                    className="rounded-xl bg-destructive hover:bg-destructive/90"
+                  >
+                    {isBulkDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Delete {safeToDelete.length} Lots
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button variant="outline" onClick={exportExcel} className="rounded-xl gap-2 border-border/60 hover:border-primary/25 hover:bg-primary/[0.02] transition-all duration-300">
               <Package className="h-4 w-4" />Export Excel
             </Button>
