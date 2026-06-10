@@ -11,6 +11,7 @@ import { Loader2, Search, Package, ShoppingCart, Trash2 } from "lucide-react";
 import { fmtDate, fmtKg } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import EmptyState from "@/components/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -72,8 +73,12 @@ export default function StockLots() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [showBulkDialog, setShowBulkDialog] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => { setQ(params.get("q") || ""); }, [params]);
+
+  // Clear selection if data completely changes, or keep it, up to UX preference.
+  // We'll leave it as is to allow cross-search selection, but filter strictly on delete.
 
   const { data: lots, isLoading } = useQuery({
     queryKey: ["lots", profile?.company_id, q, datePreset, customFrom, customTo],
@@ -228,8 +233,32 @@ export default function StockLots() {
   };
 
   const visibleLots = getVisibleLots() || [];
-  const safeToDelete = visibleLots.filter(l => Number(l.consumed_stock_kg || 0) === 0);
-  const consumedLotsCount = visibleLots.length - safeToDelete.length;
+  
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const newSet = new Set(selectedIds);
+      visibleLots.forEach(l => newSet.add(l.id));
+      setSelectedIds(newSet);
+    } else {
+      const newSet = new Set(selectedIds);
+      visibleLots.forEach(l => newSet.delete(l.id));
+      setSelectedIds(newSet);
+    }
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    const newSet = new Set(selectedIds);
+    if (checked) newSet.add(id);
+    else newSet.delete(id);
+    setSelectedIds(newSet);
+  };
+
+  const isAllVisibleSelected = visibleLots.length > 0 && visibleLots.every(l => selectedIds.has(l.id));
+
+  // Only consider currently selected IDs for deletion
+  const selectedLots = (lots || []).filter((l: StockLotRow) => selectedIds.has(l.id));
+  const safeToDelete = selectedLots.filter((l: StockLotRow) => Number(l.consumed_stock_kg || 0) === 0);
+  const consumedLotsCount = selectedLots.length - safeToDelete.length;
 
   const handleBulkDelete = async () => {
     if (!profile?.company_id || safeToDelete.length === 0) return;
@@ -289,37 +318,44 @@ export default function StockLots() {
         subtitle="Live remaining stock by product key, certificate, and supplier."
         actions={
           <div className="flex items-center gap-2">
-            <AlertDialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" className="rounded-xl gap-2 border-border/60 hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive transition-all duration-300" disabled={visibleLots.length === 0}>
-                  <Trash2 className="h-4 w-4" />Bulk Delete
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent className="rounded-2xl">
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Bulk Delete Stock Lots</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    You are about to delete <strong>{safeToDelete.length}</strong> empty stock lots.
-                    {consumedLotsCount > 0 && (
-                      <span className="block mt-2 text-warning font-medium">
-                        {consumedLotsCount} consumed lot(s) will be skipped and protected.
-                      </span>
-                    )}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel className="rounded-xl" disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={(e) => { e.preventDefault(); handleBulkDelete(); }}
-                    disabled={safeToDelete.length === 0 || isBulkDeleting}
-                    className="rounded-xl bg-destructive hover:bg-destructive/90"
-                  >
-                    {isBulkDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Delete {safeToDelete.length} Lots
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            {selectedIds.size > 0 && (
+              <AlertDialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="rounded-xl gap-2 border-border/60 hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive transition-all duration-300">
+                    <Trash2 className="h-4 w-4" />Delete Selected ({selectedIds.size})
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="rounded-2xl">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Selected Lots</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      You are about to delete <strong>{safeToDelete.length}</strong> empty stock lots.
+                      {consumedLotsCount > 0 && (
+                        <span className="block mt-2 text-warning font-medium">
+                          {consumedLotsCount} consumed lot(s) will be skipped and protected.
+                        </span>
+                      )}
+                      {safeToDelete.length === 0 && (
+                        <span className="block mt-2 text-destructive font-medium">
+                          You haven't selected any lots that can be safely deleted.
+                        </span>
+                      )}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="rounded-xl" disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={(e) => { e.preventDefault(); handleBulkDelete(); }}
+                      disabled={safeToDelete.length === 0 || isBulkDeleting}
+                      className="rounded-xl bg-destructive hover:bg-destructive/90"
+                    >
+                      {isBulkDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      Delete {safeToDelete.length} Lots
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
             <Button variant="outline" onClick={exportExcel} className="rounded-xl gap-2 border-border/60 hover:border-primary/25 hover:bg-primary/[0.02] transition-all duration-300">
               <Package className="h-4 w-4" />Export Excel
             </Button>
@@ -381,6 +417,13 @@ export default function StockLots() {
             <table className="data-table min-w-[1050px]">
               <thead>
                 <tr>
+                  <th className="text-center w-[40px] pl-4">
+                    <Checkbox
+                      checked={isAllVisibleSelected}
+                      onCheckedChange={handleSelectAll}
+                      aria-label="Select all visible"
+                    />
+                  </th>
                   <th className="text-left w-[200px]">Product</th>
                   <th className="text-left w-[110px]">Shipment</th>
                   <th className="text-left w-[120px]">Ship date</th>
@@ -403,6 +446,13 @@ export default function StockLots() {
                   return (
                   <tr key={l.id} onClick={() => navigate(`/lots/${l.id}`)}
                     className="cursor-pointer">
+                    <td className="text-center pl-4" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIds.has(l.id)}
+                        onCheckedChange={(checked) => handleSelectOne(l.id, !!checked)}
+                        aria-label={`Select lot ${l.id}`}
+                      />
+                    </td>
                     <td>
                       <div className="flex items-center gap-2">
                         <span className="font-medium whitespace-nowrap">{l.normalized_yarn_key || "—"}</span>
