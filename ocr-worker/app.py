@@ -287,10 +287,11 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     opening_stk = number_value(payload.lot.get("opening_stock_kg"))
     standard    = payload.tc.get("standard") or ""
     START       = 6
-    n           = len(payload.consumptions)
+    n           = max(1, len(payload.consumptions))
 
-    for idx, entry in enumerate(payload.consumptions):
-        r    = START + idx
+    for idx in range(n):
+        r = START + idx
+        entry = payload.consumptions[idx] if idx < len(payload.consumptions) else {}
         sale = entry.get("outward_sale") or {}
 
         # Row heights matching reference exactly
