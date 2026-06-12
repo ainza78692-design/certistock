@@ -18,7 +18,7 @@ try:
 except Exception:  # pragma: no cover - optional import guard
     PdfReader = None  # type: ignore
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 WORKER_API_KEY = os.getenv("OCR_WORKER_API_KEY", "")
 
 app = FastAPI(title="CertiStock OCR Worker", version=APP_VERSION)
@@ -115,6 +115,52 @@ def number_value(value: Any) -> float | None:
         return None
 
 
+def real_consumption_entries(payload: MassBalanceRequest) -> list[dict[str, Any]]:
+    return [
+        entry
+        for entry in payload.consumptions
+        if number_value(entry.get("consumed_weight_kg")) is not None
+        and (number_value(entry.get("consumed_weight_kg")) or 0) > 0
+    ]
+
+
+def validate_mass_balance_payload(payload: MassBalanceRequest, consumptions: list[dict[str, Any]]) -> None:
+    errors: list[str] = []
+    tc_number = payload.tc.get("tc_number")
+    supplier = payload.supplier.get("supplier_name")
+    material = payload.lot.get("normalized_yarn_key") or payload.lot.get("additional_info_raw") or payload.product_lot_id or "unknown material"
+    opening_stock = number_value(payload.lot.get("opening_stock_kg"))
+
+    if not payload.product_lot_id:
+        errors.append("product lot id is missing")
+    if not payload.transaction_certificate_id or not tc_number:
+        errors.append(f"stock lot for {material} is not linked to a valid TC/IDF")
+    if not supplier:
+        errors.append(f"supplier is missing for TC/IDF {tc_number or 'unknown'}")
+    if opening_stock is None or opening_stock < 0:
+        errors.append(f"received/opening quantity is invalid for {material}")
+
+    total_consumed = 0.0
+    for entry in consumptions:
+        consumed = number_value(entry.get("consumed_weight_kg"))
+        invoice = (entry.get("outward_sale") or {}).get("outward_invoice_no") or entry.get("id") or "unknown invoice"
+        if consumed is None or consumed <= 0:
+            errors.append(f"invalid consumed quantity for {invoice}")
+            continue
+        total_consumed += consumed
+        closing_balance = number_value(entry.get("closing_balance_after_kg"))
+        if closing_balance is not None and closing_balance < -0.001:
+            errors.append(f"negative balance after consumption {invoice}")
+
+    if opening_stock is not None and total_consumed - opening_stock > 0.001:
+        errors.append(
+            f"consumed quantity {total_consumed:.3f} exceeds received quantity {opening_stock:.3f} for {material}"
+        )
+
+    if errors:
+        raise HTTPException(status_code=422, detail={"message": "Mass Balance validation failed", "errors": errors})
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {
@@ -173,6 +219,8 @@ def ocr(payload: OcrRequest, authorization: str | None = Header(default=None)) -
 @app.post("/mass-balance/render")
 def render_mass_balance(payload: MassBalanceRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_auth(authorization)
+    consumptions = real_consumption_entries(payload)
+    validate_mass_balance_payload(payload, consumptions)
 
     wb = Workbook()
     ws = wb.active
@@ -306,12 +354,12 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     START       = 6
     END_ROW     = 35
     max_rows    = END_ROW - START + 1
-    row_count   = min(len(payload.consumptions), max_rows)
+    row_count   = min(len(consumptions), max_rows)
 
     for r in range(START, END_ROW + 1):
         idx = r - START
         has_entry = idx < row_count
-        entry = payload.consumptions[idx] if has_entry else {}
+        entry = consumptions[idx] if has_entry else {}
         sale = entry.get("outward_sale") or {}
 
         # Row heights matching reference exactly

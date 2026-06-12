@@ -2,6 +2,77 @@ import { config } from "./config.js";
 import { query } from "./db.js";
 import { buckets, buildMassBalanceStoragePath, massBalanceFileName, writeStoredFile } from "./storage.js";
 
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function validateMassBalancePayload(payload: any) {
+  const errors: string[] = [];
+  const openingStock = toNumber(payload.lot?.opening_stock_kg);
+  const material = payload.lot?.normalized_yarn_key || payload.lot?.additional_info_raw || payload.lot?.id || "unknown material";
+
+  if (!payload.product_lot_id) errors.push("Mass Balance validation failed: product lot id is missing.");
+  if (!payload.transaction_certificate_id || !payload.tc?.tc_number) {
+    errors.push(`Mass Balance validation failed: stock lot ${payload.product_lot_id || material} is not linked to a valid TC/IDF.`);
+  }
+  if (!payload.supplier?.supplier_name) {
+    errors.push(`Mass Balance validation failed: supplier is missing for TC/IDF ${payload.tc?.tc_number || "unknown"}.`);
+  }
+  if (openingStock === null || openingStock < 0) {
+    errors.push(`Mass Balance validation failed: received/opening quantity is invalid for ${material}.`);
+  }
+
+  const validConsumptions = Array.isArray(payload.consumptions) ? payload.consumptions.filter((entry: any) => {
+    const consumed = toNumber(entry?.consumed_weight_kg);
+    return consumed !== null && consumed > 0;
+  }) : [];
+
+  for (const entry of validConsumptions) {
+    const consumed = toNumber(entry.consumed_weight_kg);
+    const closing = toNumber(entry.closing_balance_after_kg);
+    const invoice = entry.outward_sale?.outward_invoice_no || entry.id || "unknown invoice";
+    if (consumed === null || consumed <= 0) {
+      errors.push(`Mass Balance validation failed: invalid consumed quantity for ${invoice}.`);
+    }
+    if (!entry.id) {
+      errors.push(`Mass Balance validation failed: consumption entry is missing an id for ${invoice}.`);
+    }
+    if (closing !== null && closing < -0.001) {
+      errors.push(`Mass Balance validation failed: negative balance after consumption ${invoice}.`);
+    }
+  }
+
+  const totalConsumed = validConsumptions.reduce((sum: number, entry: any) => sum + (toNumber(entry.consumed_weight_kg) || 0), 0);
+  if (openingStock !== null && totalConsumed - openingStock > 0.001) {
+    errors.push(
+      `Mass Balance validation failed: consumed quantity ${totalConsumed.toFixed(3)} exceeds received quantity ${openingStock.toFixed(3)} for ${material}.`,
+    );
+  }
+
+  if (errors.length) {
+    console.error("Mass Balance validation errors", {
+      companyId: payload.company_id,
+      productLotId: payload.product_lot_id,
+      tcNumber: payload.tc?.tc_number,
+      errors,
+    });
+    throw new Error(errors.join(" "));
+  }
+
+  return {
+    ...payload,
+    consumptions: validConsumptions,
+    mass_balance_validation: {
+      total_received_kg: openingStock,
+      total_consumed_kg: Number(totalConsumed.toFixed(3)),
+      remaining_kg: openingStock === null ? null : Number((openingStock - totalConsumed).toFixed(3)),
+      row_count: validConsumptions.length,
+    },
+  };
+}
+
 export async function buildMassBalancePayload(companyId: string, productLotId: string) {
   const lotResult = await query(
     `select
@@ -56,7 +127,7 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
     [companyId, productLotId],
   );
 
-  return {
+  const payload = {
     company_id: companyId,
     transaction_certificate_id: lot.transaction_certificate_id,
     product_lot_id: lot.id,
@@ -118,6 +189,8 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
       },
     })),
   };
+
+  return validateMassBalancePayload(payload);
 }
 
 export async function renderAndStoreMassBalance(companyId: string, productLotId: string) {
