@@ -18,7 +18,7 @@ try:
 except Exception:  # pragma: no cover - optional import guard
     PdfReader = None  # type: ignore
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 WORKER_API_KEY = os.getenv("OCR_WORKER_API_KEY", "")
 
 app = FastAPI(title="CertiStock OCR Worker", version=APP_VERSION)
@@ -305,11 +305,13 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     standard    = payload.tc.get("standard") or ""
     START       = 6
     END_ROW     = 35
-    n           = min(max(1, len(payload.consumptions)), END_ROW - START + 1)
+    max_rows    = END_ROW - START + 1
+    row_count   = min(len(payload.consumptions), max_rows)
 
     for r in range(START, END_ROW + 1):
         idx = r - START
-        entry = payload.consumptions[idx] if idx < len(payload.consumptions) else {}
+        has_entry = idx < row_count
+        entry = payload.consumptions[idx] if has_entry else {}
         sale = entry.get("outward_sale") or {}
 
         # Row heights matching reference exactly
@@ -337,7 +339,7 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
         # I – open/running stock
         if idx == 0:
             sc(r, 9, opening_stk, F_D11, align=A_CC, num_format="#,##0.00")
-        else:
+        elif has_entry:
             sc(r, 9, f"=U{r - 1}", F_D10, align=A_CC, num_format="#,##0.00")
 
         # J – consumed weight
@@ -348,8 +350,9 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
         if entry:
             sc(r, 11, sale.get("product_name") or product_raw, F_D11, align=A_CC)
 
-        # L – loss % (live formula)
-        sc(r, 12, f"=(1-P{r}/J{r})*100", F_D11, align=A_CC, num_format="0.00")
+        # L – loss % (live formula only for real outward rows)
+        if entry:
+            sc(r, 12, f"=(1-P{r}/J{r})*100", F_D11, align=A_CC, num_format="0.00")
 
         # M – buyer
         if entry:
@@ -385,10 +388,12 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
         if entry:
             sc(r, 20, sale.get("outward_tc_no") or "", F_D11, align=A_CC)
 
-        # U – remaining stock formula
-        sc(r, 21, f"=I{r}-J{r}", F_D11, align=A_CC, num_format="#,##0.00")
+        # U – remaining stock. Blank template rows must not carry formulas.
+        if entry:
+            sc(r, 21, f"=I{r}-J{r}", F_D11, align=A_CC, num_format="#,##0.00")
+        elif idx == 0:
+            sc(r, 21, opening_stk, F_D11, align=A_CC, num_format="#,##0.00")
 
-    # ── Trailing blank formula rows (matches reference rows 20-35) ────────────
     # ── Serialise ─────────────────────────────────────────────────────────────
     stream = io.BytesIO()
     wb.save(stream)
@@ -401,5 +406,5 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     return {
         "fileName":      file_name,
         "contentBase64": content_base64,
-        "rowCount":      n,
+        "rowCount":      row_count,
     }
