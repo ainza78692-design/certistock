@@ -19,43 +19,77 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Network Debug
+      - name: Network and Firewall Debug
         run: |
-          echo "===== USER ====="
+          echo "=================================================="
+          echo "USER"
+          echo "=================================================="
           whoami
 
-          echo "===== HOSTNAME ====="
+          echo "=================================================="
+          echo "HOSTNAME"
+          echo "=================================================="
           hostname
 
-          echo "===== TAILSCALE STATUS ====="
+          echo "=================================================="
+          echo "TAILSCALE STATUS"
+          echo "=================================================="
           tailscale status || true
 
-          echo "===== TAILSCALE IP ====="
+          echo "=================================================="
+          echo "TAILSCALE IP"
+          echo "=================================================="
           tailscale ip -4 || true
 
-          echo "===== TAILSCALE SELF CHECK ====="
-          tailscale ping yesfashion || true
-
-          echo "===== TAILSCALE TO LAPTOP ====="
+          echo "=================================================="
+          echo "TAILSCALE TO LAPTOP"
+          echo "=================================================="
           tailscale ping anas || true
 
-          echo "===== NETWORK INTERFACES ====="
+          echo "=================================================="
+          echo "NETWORK INTERFACES"
+          echo "=================================================="
           ip addr || true
 
-          echo "===== ROUTES ====="
+          echo "=================================================="
+          echo "ROUTES"
+          echo "=================================================="
           ip route || true
 
-          echo "===== PORTS ====="
+          echo "=================================================="
+          echo "PORTS"
+          echo "=================================================="
           ss -tulpn || true
 
-          echo "===== TAILSCALE PROCESS ====="
+          echo "=================================================="
+          echo "TAILSCALE PROCESS"
+          echo "=================================================="
           ps aux | grep tailscale || true
 
-          echo "===== SSH PROCESS ====="
+          echo "=================================================="
+          echo "SSH PROCESS"
+          echo "=================================================="
           ps aux | grep sshd || true
 
-          echo "===== LOCAL HEALTH CHECK ====="
+          echo "=================================================="
+          echo "LOCAL HEALTH CHECK"
+          echo "=================================================="
           curl -s http://127.0.0.1:8787/health || true
+
+          echo "=================================================="
+          echo "UFW STATUS"
+          echo "=================================================="
+          sudo -n ufw status verbose || true
+
+          echo "=================================================="
+          echo "IPTABLES"
+          echo "=================================================="
+          sudo -n iptables -L -n -v || true
+
+          echo "=================================================="
+          echo "NFTABLES"
+          echo "=================================================="
+          sudo -n nft list ruleset || true
 
       - name: Deploy
         run: sudo /usr/local/bin/deploy-certistock.sh
