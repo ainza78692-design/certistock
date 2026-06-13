@@ -32,6 +32,11 @@ jobs:
           hostname
 
           echo "=================================================="
+          echo "TAILSCALE VERSION"
+          echo "=================================================="
+          tailscale version || true
+
+          echo "=================================================="
           echo "TAILSCALE STATUS"
           echo "=================================================="
           tailscale status || true
@@ -42,9 +47,29 @@ jobs:
           tailscale ip -4 || true
 
           echo "=================================================="
+          echo "TAILSCALE NETCHECK"
+          echo "=================================================="
+          tailscale netcheck || true
+
+          echo "=================================================="
+          echo "TAILSCALE DEBUG PREFS"
+          echo "=================================================="
+          tailscale debug prefs || true
+
+          echo "=================================================="
+          echo "TAILSCALE STATUS JSON"
+          echo "=================================================="
+          tailscale status --json || true
+
+          echo "=================================================="
           echo "TAILSCALE TO LAPTOP"
           echo "=================================================="
-          tailscale ping anas || true
+          timeout 20 tailscale ping anas || true
+
+          echo "=================================================="
+          echo "TAILSCALE TO NEHAL"
+          echo "=================================================="
+          timeout 20 tailscale ping nehal || true
 
           echo "=================================================="
           echo "NETWORK INTERFACES"
