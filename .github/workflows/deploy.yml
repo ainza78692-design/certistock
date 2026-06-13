@@ -20,6 +20,9 @@ jobs:
 
       - name: Network Debug
         run: |
+          echo "===== USER ====="
+          whoami
+
           echo "===== HOSTNAME ====="
           hostname
 
@@ -29,17 +32,17 @@ jobs:
           echo "===== TAILSCALE IP ====="
           tailscale ip -4 || true
 
-          echo "===== TAILSCALED ====="
-          sudo systemctl status tailscaled --no-pager || true
+          echo "===== NETWORK INTERFACES ====="
+          ip addr || true
 
-          echo "===== SSH ====="
-          sudo systemctl status ssh --no-pager || true
+          echo "===== ROUTES ====="
+          ip route || true
 
-          echo "===== PORT 22 ====="
-          sudo ss -tulpn | grep :22 || true
+          echo "===== PORTS ====="
+          ss -tulpn || true
 
-          echo "===== UFW ====="
-          sudo ufw status || true
+          echo "===== PROCESS CHECK ====="
+          ps aux | grep -E 'ssh|tailscale|tailscaled' || true
 
       - name: Deploy
         run: sudo /usr/local/bin/deploy-certistock.sh
