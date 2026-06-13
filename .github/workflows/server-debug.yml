@@ -1,0 +1,44 @@
+name: Server Debug
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: [self-hosted, linux]
+
+    steps:
+      - name: Server Information
+        run: |
+          echo "===== HOSTNAME ====="
+          hostname
+
+          echo "===== USER ====="
+          whoami
+
+          echo "===== NETWORK ====="
+          ip a
+
+          echo "===== ROUTES ====="
+          ip route
+
+          echo "===== INTERNET TEST ====="
+          ping -c 4 google.com || true
+
+          echo "===== SSH STATUS ====="
+          sudo systemctl status ssh --no-pager || true
+
+          echo "===== SSH PORT ====="
+          sudo ss -tulpn | grep :22 || true
+
+          echo "===== TAILSCALE STATUS ====="
+          tailscale status || true
+
+          echo "===== TAILSCALE IP ====="
+          tailscale ip -4 || true
+
+          echo "===== TAILSCALED SERVICE ====="
+          sudo systemctl status tailscaled --no-pager || true
+
+          echo "===== PM2 ====="
+          pm2 status || true
