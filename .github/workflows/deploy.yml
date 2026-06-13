@@ -18,5 +18,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Network Debug
+        run: |
+          echo "===== HOSTNAME ====="
+          hostname
+
+          echo "===== TAILSCALE STATUS ====="
+          tailscale status || true
+
+          echo "===== TAILSCALE IP ====="
+          tailscale ip -4 || true
+
+          echo "===== TAILSCALED ====="
+          sudo systemctl status tailscaled --no-pager || true
+
+          echo "===== SSH ====="
+          sudo systemctl status ssh --no-pager || true
+
+          echo "===== PORT 22 ====="
+          sudo ss -tulpn | grep :22 || true
+
+          echo "===== UFW ====="
+          sudo ufw status || true
+
       - name: Deploy
         run: sudo /usr/local/bin/deploy-certistock.sh
