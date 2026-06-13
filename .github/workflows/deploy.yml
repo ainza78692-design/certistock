@@ -1,48 +1,86 @@
 name: Deploy CertiStock Production
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+push:
+branches: [main]
+workflow_dispatch:
 
 concurrency:
-  group: certistock-production
-  cancel-in-progress: false
+group: certistock-production
+cancel-in-progress: false
 
 jobs:
-  verify-and-deploy:
-    runs-on: [self-hosted, linux]
-    environment: production
+verify-and-deploy:
+runs-on: [self-hosted, linux]
+environment: production
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+```
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
 
-      - name: Network Debug
-        run: |
-          echo "===== USER ====="
-          whoami
+  - name: Network Debug
+    run: |
+      echo "=================================================="
+      echo "USER"
+      echo "=================================================="
+      whoami
 
-          echo "===== HOSTNAME ====="
-          hostname
+      echo "=================================================="
+      echo "HOSTNAME"
+      echo "=================================================="
+      hostname
 
-          echo "===== TAILSCALE STATUS ====="
-          tailscale status || true
+      echo "=================================================="
+      echo "TAILSCALE STATUS"
+      echo "=================================================="
+      tailscale status || true
 
-          echo "===== TAILSCALE IP ====="
-          tailscale ip -4 || true
+      echo "=================================================="
+      echo "TAILSCALE IP"
+      echo "=================================================="
+      tailscale ip -4 || true
 
-          echo "===== NETWORK INTERFACES ====="
-          ip addr || true
+      echo "=================================================="
+      echo "TAILSCALE SELF CHECK"
+      echo "=================================================="
+      tailscale ping yesfashion || true
 
-          echo "===== ROUTES ====="
-          ip route || true
+      echo "=================================================="
+      echo "TAILSCALE -> LAPTOP"
+      echo "=================================================="
+      tailscale ping anas || true
 
-          echo "===== PORTS ====="
-          ss -tulpn || true
+      echo "=================================================="
+      echo "NETWORK INTERFACES"
+      echo "=================================================="
+      ip addr || true
 
-          echo "===== PROCESS CHECK ====="
-          ps aux | grep -E 'ssh|tailscale|tailscaled' || true
+      echo "=================================================="
+      echo "ROUTES"
+      echo "=================================================="
+      ip route || true
 
-      - name: Deploy
-        run: sudo /usr/local/bin/deploy-certistock.sh
+      echo "=================================================="
+      echo "PORTS"
+      echo "=================================================="
+      ss -tulpn || true
+
+      echo "=================================================="
+      echo "TAILSCALE PROCESS"
+      echo "=================================================="
+      ps aux | grep tailscale || true
+
+      echo "=================================================="
+      echo "SSH PROCESS"
+      echo "=================================================="
+      ps aux | grep sshd || true
+
+      echo "=================================================="
+      echo "HEALTH CHECK LOCALHOST"
+      echo "=================================================="
+      curl -s http://127.0.0.1:8787/health || true
+
+  - name: Deploy
+    run: sudo /usr/local/bin/deploy-certistock.sh
+```
