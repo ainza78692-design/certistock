@@ -8,6 +8,24 @@ DEPLOY_HISTORY=/opt/backups/deploy-history.log
 # Ensure standard paths are available even when run via sudo
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
+echo "===== UFW STATUS ====="
+ufw status verbose || true
+
+echo "===== IPTABLES ====="
+iptables -L -n -v || true
+
+echo "===== NFTABLES ====="
+nft list ruleset || true
+
+echo "===== TAILSCALE STATUS ====="
+tailscale status || true
+
+echo "===== TAILSCALE TO HAMZA ====="
+timeout 15 tailscale ping hamza || true
+
+echo "===== TAILSCALE TO ANAS ====="
+timeout 15 tailscale ping anas || true
+
 if [ ! -d "$APP_DIR/.git" ]; then
     echo "Directory $APP_DIR does not have a git repository. Please clone the repository first or ensure it is initialized."
     exit 1
