@@ -1,6 +1,10 @@
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
+import fastifyStatic from "@fastify/static";
 import fastify from "fastify";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ZodError } from "zod";
 import { config } from "./config.js";
 import { registerConsumptionRoutes } from "./routes/consumption.js";
@@ -29,6 +33,18 @@ await app.register(multipart, {
   limits: {
     fileSize: 50 * 1024 * 1024,
   },
+});
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const updatesDir = path.join(__dirname, "..", "updates");
+if (!fs.existsSync(updatesDir)) {
+  fs.mkdirSync(updatesDir, { recursive: true });
+}
+
+await app.register(fastifyStatic, {
+  root: updatesDir,
+  prefix: "/updates/",
 });
 
 await registerHealthRoutes(app);

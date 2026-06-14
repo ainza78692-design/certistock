@@ -65,7 +65,11 @@ export default function DesktopUpdatePrompt() {
   const install = async () => {
     setInstalling(true);
     try {
-      const downloaded = await desktop.downloadUpdate(update.manifest);
+      const payload = { ...update.manifest };
+      if (payload.installerUrl?.startsWith("/")) {
+        payload.installerUrl = `${getLocalApiUrl()}${payload.installerUrl}`;
+      }
+      const downloaded = await desktop.downloadUpdate(payload);
       await desktop.installUpdate(downloaded.filePath);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Update failed");

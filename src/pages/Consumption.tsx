@@ -85,6 +85,7 @@ export default function Consumption() {
 
         queryClient.invalidateQueries({ queryKey: ["consumption", profile.company_id] });
         queryClient.invalidateQueries({ queryKey: ["lots", profile.company_id] });
+        queryClient.invalidateQueries({ queryKey: ["customers", profile.company_id] });
         if (data.productLotId) {
           queryClient.invalidateQueries({ queryKey: ["lot", data.productLotId] });
           queryClient.invalidateQueries({ queryKey: ["lot-entries", data.productLotId] });
@@ -111,6 +112,7 @@ export default function Consumption() {
 
       queryClient.invalidateQueries({ queryKey: ["consumption", profile.company_id] });
       queryClient.invalidateQueries({ queryKey: ["lots", profile.company_id] });
+      queryClient.invalidateQueries({ queryKey: ["customers", profile.company_id] });
       queryClient.invalidateQueries({ queryKey: ["lot", data.productLotId] });
       queryClient.invalidateQueries({ queryKey: ["lot-entries", data.productLotId] });
       queryClient.invalidateQueries({ queryKey: ["lot-ledger", data.productLotId] });

@@ -95,6 +95,7 @@ export default function Certificates() {
         toast.success("Certificate deleted");
         queryClient.invalidateQueries({ queryKey: ["tcs", profile.company_id] });
         queryClient.invalidateQueries({ queryKey: ["lots", profile.company_id] });
+        queryClient.invalidateQueries({ queryKey: ["suppliers", profile.company_id] });
         return;
       }
 
@@ -155,6 +156,7 @@ export default function Certificates() {
       toast.success("Certificate deleted");
       queryClient.invalidateQueries({ queryKey: ["tcs", profile.company_id] });
       queryClient.invalidateQueries({ queryKey: ["lots", profile.company_id] });
+      queryClient.invalidateQueries({ queryKey: ["suppliers", profile.company_id] });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not delete certificate.");
     } finally {

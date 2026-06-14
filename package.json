@@ -13,6 +13,7 @@
     "server:start": "node server/dist/index.js",
     "electron:dev": "node electron/dev.cjs",
     "desktop:build": "npm run build && node electron/build.cjs",
+    "publish:update": "node server/scripts/publish-update.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",

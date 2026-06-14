@@ -70,4 +70,36 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     );
     return result.rows[0];
   });
+
+  app.delete("/api/:entity(suppliers|customers)/:id", { preHandler: requireUser }, async (request, reply) => {
+    const companyId = request.user!.companyId;
+    const { entity, id } = request.params as { entity: keyof typeof entityTables; id: string };
+    const meta = entityTables[entity];
+
+    const usage = entity === "suppliers"
+      ? await query(
+        `select count(*)::int as count
+         from transaction_certificates
+         where company_id = $1 and supplier_id = $2`,
+        [companyId, id],
+      )
+      : await query(
+        `select count(*)::int as count
+         from outward_sales
+         where company_id = $1 and customer_id = $2`,
+        [companyId, id],
+      );
+
+    if ((usage.rows[0] as any)?.count > 0) {
+      const label = entity === "suppliers" ? "certificates" : "outward sales";
+      return reply.code(400).send({ error: `Cannot delete this ${entity.slice(0, -1)} because it is still used by ${label}.` });
+    }
+
+    const result = await query(
+      `delete from ${meta.table} where company_id = $1 and id = $2 returning id`,
+      [companyId, id],
+    );
+    if (!result.rows[0]) return reply.code(404).send({ error: `${entity.slice(0, -1)} not found` });
+    return { ok: true };
+  });
 }

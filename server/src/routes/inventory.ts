@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { requireUser } from "../auth.js";
 import { query, withTransaction } from "../db.js";
+import { cleanupUnusedSuppliers } from "../entityCleanup.js";
 
 const toNumber = (value: unknown) => (value == null ? null : Number(value));
 
@@ -102,6 +103,8 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
         `delete from transaction_certificates where company_id = $1 and id = $2`,
         [companyId, id],
       );
+
+      await cleanupUnusedSuppliers(client, companyId);
     }).catch((error) => {
       throw error;
     });

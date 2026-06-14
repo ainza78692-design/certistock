@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "../auth.js";
 import { query, withTransaction } from "../db.js";
 import { renderAndStoreMassBalance } from "../massBalance.js";
+import { cleanupUnusedCustomers } from "../entityCleanup.js";
 
 const consumptionSchema = z.object({
   productLotId: z.string().uuid(),
@@ -169,6 +170,7 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
       `select reverse_consumption_local($1, $2, $3, $4) as result`,
       [user.companyId, user.id, id, reason],
     );
+    await cleanupUnusedCustomers({ query }, user.companyId);
     const payload = result.rows[0].result;
 
     let xlsx = { status: "ready", error: null as string | null, workbook: null as any };
