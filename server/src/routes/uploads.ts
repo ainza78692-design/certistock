@@ -329,12 +329,8 @@ export async function registerUploadRoutes(app: FastifyInstance) {
         shipmentMap[sh.shipment_no] = ship.rows[0].id;
       }
 
-      const incomingReconciliation = await reconcileIncomingStockForInvoices({
-        client,
-        companyId: user.companyId,
-        tcId: tcRow.rows[0].id,
-        invoiceReferences,
-      });
+      // Reconciliation is now handled per-product using linked_incoming_stock_id
+      const incomingReconciliation = { matched: [], matchedCount: 0 };
 
       const lots = [];
       for (const p of products) {
@@ -412,6 +408,28 @@ export async function registerUploadRoutes(app: FastifyInstance) {
            ) values ($1,$2,'inward','transaction_certificate',$3,$4,0,$4,$5,$6)`,
           [user.companyId, lot.rows[0].id, tcRow.rows[0].id, cert, `Initial inward from TC ${tc.tc_number}`, user.id],
         );
+
+        if (p.linked_incoming_stock_id) {
+          const incRes = await client.query(
+            `select net_weight_kg from incoming_stock where id = $1 and company_id = $2`,
+            [p.linked_incoming_stock_id, user.companyId]
+          );
+          if (incRes.rows[0]) {
+            const oldWeight = Number(incRes.rows[0].net_weight_kg) || 0;
+            const newWeight = oldWeight - cert;
+            if (newWeight <= 0) {
+              await client.query(
+                `delete from incoming_stock where id = $1`,
+                [p.linked_incoming_stock_id]
+              );
+            } else {
+              await client.query(
+                `update incoming_stock set net_weight_kg = $1, updated_at = now() where id = $2`,
+                [newWeight, p.linked_incoming_stock_id]
+              );
+            }
+          }
+        }
       }
 
       await client.query(

@@ -98,6 +98,7 @@ type ProductLine = {
   normalization_confidence?: number | null;
   needs_manual_review?: boolean;
   is_custom_product?: boolean;
+  linked_incoming_stock_id?: string | null;
 };
 
 const blankLine = (): ProductLine => ({
@@ -106,6 +107,7 @@ const blankLine = (): ProductLine => ({
   production_date: "", product_category: "", product_detail: "", material_composition: "",
   standard_label_grade: "", last_processor: "", origin_country: "",
   normalized_yarn_key: null, normalization_confidence: null, needs_manual_review: true, is_custom_product: false,
+  linked_incoming_stock_id: null,
 });
 
 const combineProductRawInfo = (additionalInfo?: string | null, yarnCount?: string | null) => {
@@ -232,6 +234,22 @@ export default function ReviewExtraction() {
     },
   });
 
+  const { data: incomingStock = [] } = useQuery({
+    queryKey: ["incoming_stock_options", profile?.company_id],
+    enabled: !!profile?.company_id,
+    queryFn: async () => {
+      if (isLocalBackend) {
+        return localApi<any[]>("/api/incoming-stock");
+      }
+      const { data } = await supabase.from("incoming_stock")
+        .select("id, invoice_no, yarn_count, net_weight_kg")
+        .eq("company_id", profile!.company_id!)
+        .is("matched_tc_id", null)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+  });
+
   const productOptions = useMemo(() => {
     const seen = new Set(productMaster.map((product) => product.normalized_key));
     const detected = products
@@ -313,6 +331,32 @@ export default function ReviewExtraction() {
       }
     }
   }, [file]);
+
+  // Auto-link incoming stock based on matching invoice numbers
+  useEffect(() => {
+    if (!incomingStock.length || !products.length || !shipments.length) return;
+    
+    setProducts(prev => {
+      let changed = false;
+      const next = prev.map(p => {
+        if (p.linked_incoming_stock_id) return p; // already linked
+
+        // find the shipment for this product to get its invoice number
+        const shipment = shipments.find(s => s.shipment_no === p.shipment_no || (!s.shipment_no && s.shipment_doc_no));
+        const invoiceNo = shipment?.invoice_reference?.trim()?.toUpperCase();
+        
+        if (invoiceNo) {
+          const match = incomingStock.find(inc => inc.invoice_no?.trim()?.toUpperCase() === invoiceNo);
+          if (match) {
+            changed = true;
+            return { ...p, linked_incoming_stock_id: match.id };
+          }
+        }
+        return p;
+      });
+      return changed ? next : prev;
+    });
+  }, [incomingStock, shipments]);
 
   const updateProduct = (i: number, patch: Partial<ProductLine>) => {
     setProducts(prev => prev.map((p, idx) => {
@@ -507,6 +551,20 @@ export default function ReviewExtraction() {
           qty_in_kg: cert, balance_before_kg: 0, balance_after_kg: cert,
           remarks: "Initial inward from TC " + tc.tc_number, created_by: user?.id,
         });
+
+        if (p.linked_incoming_stock_id) {
+          const { data: incRes } = await supabase.from("incoming_stock")
+            .select("net_weight_kg").eq("id", p.linked_incoming_stock_id).eq("company_id", profile.company_id).maybeSingle();
+          if (incRes) {
+            const oldWeight = Number(incRes.net_weight_kg) || 0;
+            const newWeight = oldWeight - cert;
+            if (newWeight <= 0) {
+              await supabase.from("incoming_stock").delete().eq("id", p.linked_incoming_stock_id);
+            } else {
+              await supabase.from("incoming_stock").update({ net_weight_kg: newWeight, updated_at: new Date().toISOString() }).eq("id", p.linked_incoming_stock_id);
+            }
+          }
+        }
       }
 
       await supabase.from("uploaded_files").update({ parsing_status: "approved" }).eq("id", fileId);
@@ -741,6 +799,30 @@ export default function ReviewExtraction() {
                           <p className="text-xs text-warning/90 mt-1.5 flex items-center"><AlertCircle className="w-3 h-3 mr-1" /> Product key could not be mapped. Please select it manually before approval.</p>
                         )}
                       </div>
+                      
+                      <div className="col-span-2 space-y-1.5 mt-2">
+                        <Label className="text-xs font-semibold">Link to Incoming Stock</Label>
+                        <Select value={p.linked_incoming_stock_id || "none"} onValueChange={value => updateProduct(i, { linked_incoming_stock_id: value === "none" ? null : value })}>
+                          <SelectTrigger className="h-10 rounded-xl">
+                            <SelectValue placeholder="Select an incoming stock to deduct from" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl max-h-[300px]">
+                            <SelectItem value="none">
+                              <span className="font-medium text-muted-foreground">Do not deduct from incoming stock</span>
+                            </SelectItem>
+                            {incomingStock.map((inc) => (
+                              <SelectItem key={inc.id} value={inc.id}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{inc.invoice_no} — {inc.yarn_count}</span>
+                                  <span className="text-xs text-muted-foreground">Pending: {inc.net_weight_kg} kg</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-[10px] text-muted-foreground mt-1">If selected, the certified weight will be precisely deducted from the selected incoming stock.</p>
+                      </div>
+
                     </div>
                   </AccordionContent>
                 </AccordionItem>
