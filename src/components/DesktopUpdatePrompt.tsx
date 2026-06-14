@@ -112,10 +112,15 @@ export default function DesktopUpdatePrompt() {
           <AlertDialogAction asChild>
             <Button className="rounded-xl" onClick={install} disabled={installing}>
               {installing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-              Download and install
+              {installing ? "Downloading update (~132MB)..." : "Download and install"}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>
+        {installing && (
+          <p className="text-center text-xs text-muted-foreground mt-4">
+            Please wait. The app will automatically restart when the download and installation complete.
+          </p>
+        )}
         {!update.mandatory && (
           <Button type="button" variant="ghost" size="sm" className="w-fit rounded-xl" onClick={() => check(false)} disabled={checking || installing}>
             <RefreshCw className={`mr-2 h-4 w-4 ${checking ? "animate-spin" : ""}`} />
