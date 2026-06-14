@@ -416,7 +416,7 @@ export default function ReviewExtraction() {
     const supplierName = cleanSupplierName(tc.supplier_name);
     if (!supplierName) return toast.error("Supplier required");
     if (!products.length) return toast.error("At least one product line is required");
-    if (products.some(p => !p.certified_weight_kg)) return toast.error("All product certified weights required");
+    if (products.some(p => !p.net_shipping_weight_kg)) return toast.error("All product net weights required");
     if (products.some(p => !p.normalized_yarn_key)) return toast.error("Select a product key for every product line");
     setSaving(true);
     try {
@@ -496,7 +496,8 @@ export default function ReviewExtraction() {
 
       // 4. Product lots
       for (const p of products) {
-        const cert = Number(p.certified_weight_kg);
+        const stockWeight = Number(p.net_shipping_weight_kg || p.certified_weight_kg || 0);
+        if (!stockWeight) throw new Error("All product net weights required");
         
         let pmId = null;
         if (p.normalized_yarn_key) {
@@ -526,8 +527,8 @@ export default function ReviewExtraction() {
           article_no: p.article_no || null,
           number_of_units: p.number_of_units ? Number(p.number_of_units) : null,
           unit_type: p.unit_type || null,
-          net_shipping_weight_kg: Number(p.net_shipping_weight_kg || cert),
-          certified_weight_kg: cert,
+          net_shipping_weight_kg: Number(p.net_shipping_weight_kg || stockWeight),
+          certified_weight_kg: stockWeight,
           production_date: p.production_date || null,
           product_category: p.product_category || null,
           product_detail: p.product_detail || null,
@@ -538,8 +539,8 @@ export default function ReviewExtraction() {
           normalized_yarn_key: p.normalized_yarn_key,
           last_processor: p.last_processor || null,
           origin_country: p.origin_country || null,
-          opening_stock_kg: cert,
-          remaining_stock_kg: cert,
+          opening_stock_kg: stockWeight,
+          remaining_stock_kg: stockWeight,
           status: "active",
           needs_manual_review: false,
         }).select().single();
@@ -548,7 +549,7 @@ export default function ReviewExtraction() {
         await supabase.from("stock_ledger").insert({
           company_id: profile.company_id, product_lot_id: lotRow.id, transaction_type: "inward",
           reference_type: "transaction_certificate", reference_id: tcRow.id,
-          qty_in_kg: cert, balance_before_kg: 0, balance_after_kg: cert,
+          qty_in_kg: stockWeight, balance_before_kg: 0, balance_after_kg: stockWeight,
           remarks: "Initial inward from TC " + tc.tc_number, created_by: user?.id,
         });
 
@@ -557,7 +558,7 @@ export default function ReviewExtraction() {
             .select("net_weight_kg").eq("id", p.linked_incoming_stock_id).eq("company_id", profile.company_id).maybeSingle();
           if (incRes) {
             const oldWeight = Number(incRes.net_weight_kg) || 0;
-            const newWeight = oldWeight - cert;
+            const newWeight = oldWeight - stockWeight;
             if (newWeight <= 0) {
               await supabase.from("incoming_stock").delete().eq("id", p.linked_incoming_stock_id);
             } else {
@@ -732,9 +733,9 @@ export default function ReviewExtraction() {
                       <div className="flex items-center gap-3">
                         <Package className="h-4 w-4 text-muted-foreground" />
                         <span className="font-semibold text-sm">{p.normalized_yarn_key || `Product Line ${i + 1}`}</span>
-                        {p.certified_weight_kg && (
+                        {p.net_shipping_weight_kg && (
                           <span className="text-muted-foreground font-normal text-xs tabular-nums">
-                            {Number(p.certified_weight_kg).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
+                            {Number(p.net_shipping_weight_kg).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
                           </span>
                         )}
                       </div>
@@ -762,7 +763,6 @@ export default function ReviewExtraction() {
                       <Field label="Units" type="number" value={p.number_of_units} onChange={v => updateProduct(i, { number_of_units: v })} />
                       <Field label="Unit type" value={p.unit_type} onChange={v => updateProduct(i, { unit_type: v })} />
                       <Field label="Net weight (kg)" type="number" value={p.net_shipping_weight_kg} onChange={v => updateProduct(i, { net_shipping_weight_kg: v })} />
-                      <Field label="Certified weight (kg)" type="number" value={p.certified_weight_kg} onChange={v => updateProduct(i, { certified_weight_kg: v })} />
                       <div className="col-span-2 space-y-1.5 mt-2">
                         <Label className="text-xs font-semibold">Product key mapping</Label>
                         <Select value={p.is_custom_product ? "__CREATE_NEW__" : (p.normalized_yarn_key || "")} onValueChange={value => updateProduct(i, { normalized_yarn_key: value })}>
@@ -820,7 +820,7 @@ export default function ReviewExtraction() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-[10px] text-muted-foreground mt-1">If selected, the certified weight will be precisely deducted from the selected incoming stock.</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">If selected, the net weight will be precisely deducted from the selected incoming stock.</p>
                       </div>
 
                     </div>

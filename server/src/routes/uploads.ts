@@ -335,7 +335,8 @@ export async function registerUploadRoutes(app: FastifyInstance) {
       const lots = [];
       for (const p of products) {
         const cert = Number(p.certified_weight_kg || 0);
-        if (!cert) throw new Error("All product certified weights required");
+        const stockWeight = Number(p.net_shipping_weight_kg || p.certified_weight_kg || 0);
+        if (!stockWeight) throw new Error("All product net weights required");
         let pm = await client.query<any>(
           `select id from product_master where company_id = $1 and normalized_key = $2 limit 1`,
           [user.companyId, p.normalized_yarn_key],
@@ -395,8 +396,8 @@ export async function registerUploadRoutes(app: FastifyInstance) {
             p.normalized_yarn_key,
             p.last_processor || null,
             p.origin_country || null,
-            cert,
-            cert,
+            stockWeight,
+            stockWeight,
           ],
         );
         lots.push(lot.rows[0]);
@@ -406,7 +407,7 @@ export async function registerUploadRoutes(app: FastifyInstance) {
              company_id, product_lot_id, transaction_type, reference_type, reference_id,
              qty_in_kg, balance_before_kg, balance_after_kg, remarks, created_by
            ) values ($1,$2,'inward','transaction_certificate',$3,$4,0,$4,$5,$6)`,
-          [user.companyId, lot.rows[0].id, tcRow.rows[0].id, cert, `Initial inward from TC ${tc.tc_number}`, user.id],
+          [user.companyId, lot.rows[0].id, tcRow.rows[0].id, stockWeight, `Initial inward from TC ${tc.tc_number}`, user.id],
         );
 
         if (p.linked_incoming_stock_id) {
@@ -416,7 +417,7 @@ export async function registerUploadRoutes(app: FastifyInstance) {
           );
           if (incRes.rows[0]) {
             const oldWeight = Number(incRes.rows[0].net_weight_kg) || 0;
-            const newWeight = oldWeight - cert;
+            const newWeight = oldWeight - stockWeight;
             if (newWeight <= 0) {
               await client.query(
                 `delete from incoming_stock where id = $1`,
