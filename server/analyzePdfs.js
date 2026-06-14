@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getDocumentProxy, extractText } from "unpdf";
-import { parseSimpleTcExtraction } from "./src/extraction/simpleParser.js";
+import { parseSimpleTcExtraction } from "./src/extraction/simpleParser.ts";
 
 async function analyzePdfs(folderPath) {
   try {

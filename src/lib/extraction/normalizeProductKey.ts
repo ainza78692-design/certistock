@@ -60,6 +60,27 @@ export const normalizeProductKeyDetailed = (input: ProductNormalizationInput): P
     return { normalizedKey: "30D", matchedAlias: "30D", confidence: 0.96, needsManualReview: false };
   }
 
+  // Generic fraction patterns (e.g. 0075/036 -> 75/36)
+  const fractionMatch = text.match(/\b0*(\d+)\s*\/\s*0*(\d+)\b/);
+  if (fractionMatch) {
+    const key = `${fractionMatch[1]}/${fractionMatch[2]}`;
+    return { normalizedKey: key, matchedAlias: key, confidence: 0.90, needsManualReview: false };
+  }
+
+  // Generic Denier patterns (e.g. 68 DENIER -> 68D)
+  const denierMatch = text.match(/\b(\d+)\s*(?:DENIER|DEN|D)\b/);
+  if (denierMatch) {
+    const key = `${denierMatch[1]}D`;
+    return { normalizedKey: key, matchedAlias: key, confidence: 0.90, needsManualReview: false };
+  }
+
+  // Generic Spun Cotton/Poly patterns (e.g. 30s SPUN -> 30s)
+  const spunMatch = text.match(/\b(\d+s)\b/);
+  if (spunMatch) {
+    const key = spunMatch[1];
+    return { normalizedKey: key, matchedAlias: key, confidence: 0.90, needsManualReview: false };
+  }
+
   return { normalizedKey: null, matchedAlias: null, confidence: 0, needsManualReview: true, aliasSearchKey: null };
 };
 
