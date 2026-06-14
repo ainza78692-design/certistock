@@ -180,7 +180,7 @@ export async function registerUploadRoutes(app: FastifyInstance) {
          where a.company_id = $1`,
         [user.companyId]
       );
-      const extracted = parseSimpleTcExtraction(finalText, aliasesResult.rows);
+      const extracted = parseSimpleTcExtraction(finalText, aliasesResult.rows as any);
       if (source === "native_pdf_text_weak_ocr_unavailable") {
         (extracted as any)._confidence = Math.min(Number((extracted as any)._confidence || 0), 60);
         (extracted as any)._review_flags = [
