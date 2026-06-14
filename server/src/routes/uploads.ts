@@ -173,7 +173,14 @@ export async function registerUploadRoutes(app: FastifyInstance) {
 
       if (!finalText.trim()) throw new Error("No usable text could be extracted from the PDF");
 
-      const extracted = parseSimpleTcExtraction(finalText);
+      const aliasesResult = await query(
+        `select a.alias_text, pm.normalized_key 
+         from product_aliases a
+         join product_master pm on pm.id = a.product_master_id
+         where a.company_id = $1`,
+        [user.companyId]
+      );
+      const extracted = parseSimpleTcExtraction(finalText, aliasesResult.rows);
       if (source === "native_pdf_text_weak_ocr_unavailable") {
         (extracted as any)._confidence = Math.min(Number((extracted as any)._confidence || 0), 60);
         (extracted as any)._review_flags = [
@@ -333,10 +340,32 @@ export async function registerUploadRoutes(app: FastifyInstance) {
       for (const p of products) {
         const cert = Number(p.certified_weight_kg || 0);
         if (!cert) throw new Error("All product certified weights required");
-        const pm = await client.query<any>(
+        let pm = await client.query<any>(
           `select id from product_master where company_id = $1 and normalized_key = $2 limit 1`,
           [user.companyId, p.normalized_yarn_key],
         );
+        let pmId = pm.rows[0]?.id;
+        if (!pmId && p.normalized_yarn_key) {
+          const insertPm = await client.query<any>(
+            `insert into product_master(company_id, normalized_key, display_name) values ($1, $2, $3) returning id`,
+            [user.companyId, p.normalized_yarn_key, p.normalized_yarn_key],
+          );
+          pmId = insertPm.rows[0].id;
+        }
+
+        if (p.needs_manual_review && pmId) {
+          const aliasText = (p.article_no || p.yarn_count_raw || p.additional_info_raw || "").trim();
+          if (aliasText) {
+            await client.query(
+              `insert into product_aliases(company_id, product_master_id, alias_text)
+               select $1, $2, $3
+               where not exists (
+                 select 1 from product_aliases where company_id = $1 and upper(alias_text) = upper($3)
+               )`,
+              [user.companyId, pmId, aliasText]
+            );
+          }
+        }
         const lot = await client.query<any>(
           `insert into product_lots(
              company_id, transaction_certificate_id, shipment_id, product_master_id, product_no,
@@ -351,7 +380,7 @@ export async function registerUploadRoutes(app: FastifyInstance) {
             user.companyId,
             tcRow.rows[0].id,
             shipmentMap[p.shipment_no || p.product_no] || null,
-            pm.rows[0]?.id || null,
+            pmId || null,
             p.product_no || null,
             p.shipment_no ? `${p.shipment_no}${p.product_no ? ` / ${p.product_no}` : ""}` : p.product_no || null,
             p.order_no || null,

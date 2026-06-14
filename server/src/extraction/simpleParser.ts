@@ -103,8 +103,14 @@ export function isGoodNativeText(text: string) {
   return text.trim().length >= 1500 && keywordCount >= 2;
 }
 
-export function normalizeProductKey(raw: string) {
+export function normalizeProductKey(raw: string, aliases: { alias_text: string; normalized_key: string }[] = []) {
   const s = raw.toUpperCase();
+
+  // 1. Check dynamic database aliases first
+  const matchedAlias = aliases.find((a) => s.includes(a.alias_text.toUpperCase()));
+  if (matchedAlias) return matchedAlias.normalized_key;
+
+  // 2. Specific known supplier codes (legacy backward compatibility)
   if (/\b0*50\s*\/\s*0*48\b|\b50\s*\/\s*48\b/.test(s)) return "50/48";
   if (/\b50\s*\/\s*45\b/.test(s)) return "50/45";
   if (/\b75\s*\/\s*72\b|SD7572ROTO|AFL99909/.test(s)) return "75/72";
@@ -115,10 +121,29 @@ export function normalizeProductKey(raw: string) {
   if (/\b75\s*DENIER\b|\b75D\b/.test(s)) return "75D";
   if (/\b150\s*DENIER\b|\b150D\b|SD15048FDY|SD15048|AFL99916/.test(s)) return "150D";
   if (/\b30\s*DENIER\b|\b30D\b|3000SD/.test(s)) return "30D";
+
+  // 3. Generic fraction patterns (e.g. 0075/036 -> 75/36)
+  const fractionMatch = s.match(/\b0*(\d+)\s*\/\s*0*(\d+)\b/);
+  if (fractionMatch) {
+    return `${fractionMatch[1]}/${fractionMatch[2]}`;
+  }
+
+  // 4. Generic Denier patterns (e.g. 68 DENIER -> 68D)
+  const denierMatch = s.match(/\b(\d+)\s*(?:DENIER|DEN|D)\b/);
+  if (denierMatch) {
+    return `${denierMatch[1]}D`;
+  }
+
+  // 5. Generic Spun Cotton/Poly patterns (e.g. 30s SPUN -> 30s)
+  const spunMatch = s.match(/\b(\d+s)\b/);
+  if (spunMatch) {
+    return spunMatch[1];
+  }
+
   return null;
 }
 
-export function parseSimpleTcExtraction(text: string) {
+export function parseSimpleTcExtraction(text: string, aliases: { alias_text: string; normalized_key: string }[] = []) {
   const compact = text.replace(/\s+/g, " ").trim();
   const sellerSection = sectionBetween(
     compact,
@@ -193,7 +218,7 @@ export function parseSimpleTcExtraction(text: string) {
     const materialComposition = firstMatch(block, [valueUntil("Material Composition", productStopLabels)]);
     const standardLabelGrade = firstMatch(block, [valueUntil("Standard \\(Label Grade\\)", productStopLabels)]);
     const search = [block, article, yarn, additional, productCategory, productDetail].filter(Boolean).join(" ");
-    const normalized = normalizeProductKey(search);
+    const normalized = normalizeProductKey(search, aliases);
     const inlineShipmentProductNo = firstMatch(block, [/Product No\.?\s*[:\-]?\s*([A-Za-z0-9-]+)\s*\/\s*[A-Za-z0-9-]+/i]);
     return {
       product_no: match[1],

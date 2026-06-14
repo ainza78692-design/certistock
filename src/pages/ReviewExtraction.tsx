@@ -97,6 +97,7 @@ type ProductLine = {
   normalized_yarn_key: string | null;
   normalization_confidence?: number | null;
   needs_manual_review?: boolean;
+  is_custom_product?: boolean;
 };
 
 const blankLine = (): ProductLine => ({
@@ -104,7 +105,7 @@ const blankLine = (): ProductLine => ({
   number_of_units: "", unit_type: "BOX", net_shipping_weight_kg: "", certified_weight_kg: "",
   production_date: "", product_category: "", product_detail: "", material_composition: "",
   standard_label_grade: "", last_processor: "", origin_country: "",
-  normalized_yarn_key: null, normalization_confidence: null, needs_manual_review: true,
+  normalized_yarn_key: null, normalization_confidence: null, needs_manual_review: true, is_custom_product: false,
 });
 
 const combineProductRawInfo = (additionalInfo?: string | null, yarnCount?: string | null) => {
@@ -317,7 +318,14 @@ export default function ReviewExtraction() {
       if (idx !== i) return p;
       const next = { ...p, ...patch };
       if (patch.normalized_yarn_key !== undefined) {
-        next.needs_manual_review = !patch.normalized_yarn_key;
+        if (patch.normalized_yarn_key === "__CREATE_NEW__") {
+          next.is_custom_product = true;
+          next.normalized_yarn_key = "";
+          next.needs_manual_review = true;
+        } else {
+          next.is_custom_product = false;
+          next.needs_manual_review = !patch.normalized_yarn_key;
+        }
       } else {
         next.normalized_yarn_key = normalizeProductKey(next.additional_info_raw || next.yarn_count_raw, next.article_no);
         next.needs_manual_review = !next.normalized_yarn_key;
@@ -444,13 +452,29 @@ export default function ReviewExtraction() {
       // 4. Product lots
       for (const p of products) {
         const cert = Number(p.certified_weight_kg);
-        const { data: pmRow } = p.normalized_yarn_key ? await supabase.from("product_master")
-          .select("id").eq("company_id", profile.company_id).eq("normalized_key", p.normalized_yarn_key).maybeSingle() : { data: null };
+        
+        let pmId = null;
+        if (p.normalized_yarn_key) {
+          const { data: pmRow } = await supabase.from("product_master")
+            .select("id").eq("company_id", profile.company_id).eq("normalized_key", p.normalized_yarn_key).maybeSingle();
+          pmId = pmRow?.id;
+          
+          if (!pmId) {
+            const { data: newPm, error: pmErr } = await supabase.from("product_master").insert({
+              company_id: profile.company_id,
+              normalized_key: p.normalized_yarn_key,
+              display_name: p.normalized_yarn_key
+            }).select("id").single();
+            if (pmErr) throw pmErr;
+            pmId = newPm.id;
+          }
+        }
+
         const { data: lotRow, error: lotErr } = await supabase.from("product_lots").insert({
           company_id: profile.company_id,
           transaction_certificate_id: tcRow.id,
           shipment_id: shipmentMap[p.shipment_no || p.product_no] || null,
-          product_master_id: pmRow?.id || null,
+          product_master_id: pmId,
           product_no: p.product_no || null,
           shipment_product_no: p.shipment_no ? `${p.shipment_no}${p.product_no ? ` / ${p.product_no}` : ""}` : p.product_no || null,
           order_no: p.order_no || null,
@@ -682,8 +706,8 @@ export default function ReviewExtraction() {
                       <Field label="Certified weight (kg)" type="number" value={p.certified_weight_kg} onChange={v => updateProduct(i, { certified_weight_kg: v })} />
                       <div className="col-span-2 space-y-1.5 mt-2">
                         <Label className="text-xs font-semibold">Product key mapping</Label>
-                        <Select value={p.normalized_yarn_key || ""} onValueChange={value => updateProduct(i, { normalized_yarn_key: value, needs_manual_review: false })}>
-                          <SelectTrigger className={p.normalized_yarn_key ? "h-10 rounded-xl" : "h-10 rounded-xl border-warning/50 bg-warning/5 ring-warning/20 focus:ring-warning/30"}>
+                        <Select value={p.is_custom_product ? "__CREATE_NEW__" : (p.normalized_yarn_key || "")} onValueChange={value => updateProduct(i, { normalized_yarn_key: value })}>
+                          <SelectTrigger className={p.normalized_yarn_key || p.is_custom_product ? "h-10 rounded-xl" : "h-10 rounded-xl border-warning/50 bg-warning/5 ring-warning/20 focus:ring-warning/30"}>
                             <SelectValue placeholder="Select the official product key to map this to" />
                           </SelectTrigger>
                           <SelectContent className="rounded-xl">
@@ -693,8 +717,25 @@ export default function ReviewExtraction() {
                                 {product.display_name && <span className="text-muted-foreground ml-2">— {product.display_name}</span>}
                               </SelectItem>
                             ))}
+                            <SelectItem value="__CREATE_NEW__">
+                              <span className="font-medium italic text-primary">+ Create new product...</span>
+                            </SelectItem>
                           </SelectContent>
                         </Select>
+                        {p.is_custom_product && (
+                          <div className="mt-2">
+                            <Input
+                              autoFocus
+                              placeholder="Type new product key (e.g. 300D)"
+                              value={p.normalized_yarn_key || ""}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setProducts(prev => prev.map((x, idx) => idx === i ? { ...x, normalized_yarn_key: val, needs_manual_review: !val } : x));
+                              }}
+                              className="h-10 rounded-xl border-primary/40 focus-visible:ring-primary/30"
+                            />
+                          </div>
+                        )}
                         {!p.normalized_yarn_key && (
                           <p className="text-xs text-warning/90 mt-1.5 flex items-center"><AlertCircle className="w-3 h-3 mr-1" /> Product key could not be mapped. Please select it manually before approval.</p>
                         )}
