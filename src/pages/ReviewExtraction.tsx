@@ -306,7 +306,8 @@ export default function ReviewExtraction() {
             origin_country: p.origin_country ?? "",
             normalized_yarn_key: normalizedKey,
             normalization_confidence: typeof p.normalization_confidence === "number" ? p.normalization_confidence : null,
-            needs_manual_review: Boolean(p.needs_manual_review || !normalizedKey),
+            needs_manual_review: Boolean(!normalizedKey),
+            is_custom_product: false,
           };
         }));
       }
