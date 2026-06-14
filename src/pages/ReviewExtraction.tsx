@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, FileText, Loader2, CheckCircle2, RefreshCw, Truck, Package, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -841,8 +842,12 @@ function Field({ label, value, onChange, type = "text", mono = false }:
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
-      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)}
-        className={`h-9 ${mono ? "font-mono text-xs" : ""}`} />
+      {type === "date" ? (
+        <DatePicker value={value} onChange={onChange} className={`h-9 ${mono ? "font-mono text-xs" : ""}`} />
+      ) : (
+        <Input type={type} value={value} onChange={(e) => onChange(e.target.value)}
+          className={`h-9 ${mono ? "font-mono text-xs" : ""}`} />
+      )}
     </div>
   );
 }

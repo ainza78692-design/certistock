@@ -16,10 +16,17 @@ export const fmtNum = (n: number | null | undefined, decimals = 0) => {
   });
 };
 
+import { format as formatDateFns, parseISO } from "date-fns";
+
 export const fmtDate = (d: string | null | undefined) => {
   if (!d) return "—";
-  try { return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); }
-  catch { return d; }
+  try {
+    const dateObj = new Date(d);
+    if (isNaN(dateObj.getTime())) return d;
+    return formatDateFns(dateObj, "yyyy-MM-dd");
+  } catch {
+    return d;
+  }
 };
 
 const KEYS = ["50/45","50/48","75/72","150/48","20/1","50D","70D","75D","150D","30D"];

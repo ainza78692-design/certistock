@@ -11,6 +11,7 @@ import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -269,7 +270,7 @@ export default function LiveStock() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Shipment Date</Label>
-            <Input type="date" value={form.shipment_date} onChange={(e) => updateForm("shipment_date", e.target.value)} />
+            <DatePicker value={form.shipment_date} onChange={(val) => updateForm("shipment_date", val)} />
           </div>
           <div className="flex gap-2">
             {editingId && (

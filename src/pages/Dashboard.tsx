@@ -40,8 +40,9 @@ const getPresetDate = (key: Exclude<RangeKey, "custom">): Date | null => {
   }
 };
 
-const shortDate = (d: Date) =>
-  d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+import { format as formatDateFns } from "date-fns";
+
+const shortDate = (d: Date) => formatDateFns(d, "yyyy-MM-dd");
 
 /* ─── Sub-components ─── */
 const toneStyles: Record<string, { icon: string }> = {

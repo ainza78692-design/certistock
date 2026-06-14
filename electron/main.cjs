@@ -100,6 +100,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: "CertiStock - Certified Stock Tracking",
+    icon: path.join(__dirname, "..", "build", "icon.png"),
     backgroundColor: "#fbfaf8",
     show: false,
     webPreferences: {

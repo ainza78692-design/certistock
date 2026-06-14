@@ -11,6 +11,7 @@ import { Loader2, Search, ShoppingCart, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePreset, getDateRange, matchesDateRange } from "@/lib/dateFilters";
 import { toast } from "sonner";
@@ -176,8 +177,8 @@ export default function Consumption() {
               <SelectItem value="custom">Custom range</SelectItem>
             </SelectContent>
           </Select>
-          <Input type="date" value={customFrom} onChange={(event) => { setCustomFrom(event.target.value); setDatePreset("custom"); }} className="border-0 bg-muted/40" />
-          <Input type="date" value={customTo} onChange={(event) => { setCustomTo(event.target.value); setDatePreset("custom"); }} className="border-0 bg-muted/40" />
+          <DatePicker value={customFrom} onChange={(val) => { setCustomFrom(val); setDatePreset("custom"); }} className="border-0 bg-muted/40 w-[140px]" />
+          <DatePicker value={customTo} onChange={(val) => { setCustomTo(val); setDatePreset("custom"); }} className="border-0 bg-muted/40 w-[140px]" />
         </div>
       </div>
 

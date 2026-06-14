@@ -9,6 +9,7 @@ import PageHeader from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Loader2, Search, Package, ShoppingCart, Trash2 } from "lucide-react";
 import { fmtDate, fmtKg } from "@/lib/format";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -383,8 +384,8 @@ export default function StockLots() {
               <SelectItem value="custom">Custom range</SelectItem>
             </SelectContent>
           </Select>
-          <Input type="date" value={customFrom} onChange={(event) => { setCustomFrom(event.target.value); setDatePreset("custom"); }} className="border-0 bg-muted/40" />
-          <Input type="date" value={customTo} onChange={(event) => { setCustomTo(event.target.value); setDatePreset("custom"); }} className="border-0 bg-muted/40" />
+          <DatePicker value={customFrom} onChange={(val) => { setCustomFrom(val); setDatePreset("custom"); }} className="border-0 bg-muted/40 w-[140px]" />
+          <DatePicker value={customTo} onChange={(val) => { setCustomTo(val); setDatePreset("custom"); }} className="border-0 bg-muted/40 w-[140px]" />
         </div>
       </form>
 
