@@ -372,7 +372,8 @@ export default function ReviewExtraction() {
     }
   }, [file]);
 
-  // Auto-link incoming stock using invoice normalization plus product-key compatibility.
+  // Auto-link incoming stock by invoice first. If invoice matches multiple rows,
+  // use the product key only as a tie-breaker; otherwise leave it manual.
   useEffect(() => {
     if (!incomingStock.length || !products.length || !shipments.length) return;
     
@@ -383,19 +384,26 @@ export default function ReviewExtraction() {
 
         const shipment = shipments.find(s => s.shipment_no === p.shipment_no || (!s.shipment_no && s.shipment_doc_no));
         const invoiceNos = splitInvoiceReferences(shipment?.invoice_reference);
-        if (!invoiceNos.length || !p.normalized_yarn_key) return p;
+        if (!invoiceNos.length) return p;
 
         const invoiceSet = new Set(invoiceNos.flatMap((invoice) => invoiceVariants(invoice)));
-        const matches = incomingStock.filter((inc) => {
-          const sameInvoice = invoiceVariants(inc.invoice_no).some((variant) => invoiceSet.has(variant));
-          if (!sameInvoice) return false;
-          return normalizeIncomingStockKey(inc) === p.normalized_yarn_key;
+        const invoiceMatches = incomingStock.filter((inc) => {
+          return invoiceVariants(inc.invoice_no).some((variant) => invoiceSet.has(variant));
         });
 
-        if (matches.length === 1) {
+        if (invoiceMatches.length === 1) {
           changed = true;
-          return { ...p, linked_incoming_stock_id: matches[0].id };
+          return { ...p, linked_incoming_stock_id: invoiceMatches[0].id };
         }
+
+        if (invoiceMatches.length > 1 && p.normalized_yarn_key) {
+          const keyMatches = invoiceMatches.filter((inc) => normalizeIncomingStockKey(inc) === p.normalized_yarn_key);
+          if (keyMatches.length === 1) {
+            changed = true;
+            return { ...p, linked_incoming_stock_id: keyMatches[0].id };
+          }
+        }
+
         return p;
       });
       return changed ? next : prev;
