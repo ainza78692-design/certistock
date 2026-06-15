@@ -21,6 +21,7 @@ import type { Tables } from "@/integrations/supabase/types";
 
 type UploadedFile = Tables<"uploaded_files">;
 type ProductMasterOption = Pick<Tables<"product_master">, "id" | "normalized_key" | "display_name">;
+type IncomingStockOption = Pick<Tables<"incoming_stock">, "id" | "invoice_no" | "yarn_count" | "net_weight_kg" | "normalized_yarn_key">;
 
 type ExtractedProduct = {
   product_no?: string | null;
@@ -176,11 +177,43 @@ const cleanInputTcs = (value?: string | null) => {
   return cleaned;
 };
 
+const cleanInvoiceReference = (value?: string | null) =>
+  (value || "")
+    .replace(/\s+/g, " ")
+    .replace(/^(?:Invoice References?|Invoice No\.?)\s*[:\-]?\s*/i, "")
+    .replace(/\s+(?:Consignee(?:\s+name\s+and\s+address|\s+Name)?|TE-ID|Shipment No\.?|Shipment Date|Gross Shipping Weight)\b.*$/i, "")
+    .trim();
+
+const normalizeInvoiceComparable = (value?: string | null) =>
+  cleanInvoiceReference(value)
+    .toUpperCase()
+    .replace(/\s*\(\s*/g, "(")
+    .replace(/\s*\)\s*/g, ")")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const invoiceVariants = (value?: string | null) => {
+  const normalized = normalizeInvoiceComparable(value);
+  if (!normalized) return [];
+  return Array.from(
+    new Set([
+      normalized,
+      normalized.replace(/\(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}\)/g, "").trim(),
+      normalized.replace(/\s+/g, ""),
+      normalized.replace(/\(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}\)/g, "").replace(/\s+/g, ""),
+    ].filter(Boolean)),
+  );
+};
+
 const splitInvoiceReferences = (value?: string | null) =>
   (value || "")
     .split(/\s*(?:,|;|\n|\r|\band\b)\s*/i)
-    .map((part) => part.trim().toUpperCase())
+    .map((part) => cleanInvoiceReference(part))
+    .map((part) => part?.trim())
     .filter(Boolean);
+
+const normalizeIncomingStockKey = (stock: IncomingStockOption) =>
+  stock.normalized_yarn_key || normalizeProductKey(stock.yarn_count || "");
 
 export default function ReviewExtraction() {
   const { fileId } = useParams();
@@ -241,15 +274,15 @@ export default function ReviewExtraction() {
     },
   });
 
-  const { data: incomingStock = [] } = useQuery({
+  const { data: incomingStock = [] } = useQuery<IncomingStockOption[]>({
     queryKey: ["incoming_stock_options", profile?.company_id],
     enabled: !!profile?.company_id,
     queryFn: async () => {
       if (isLocalBackend) {
-        return localApi<any[]>("/api/incoming-stock");
+        return localApi<IncomingStockOption[]>("/api/incoming-stock");
       }
       const { data } = await supabase.from("incoming_stock")
-        .select("id, invoice_no, yarn_count, net_weight_kg")
+        .select("id, invoice_no, yarn_count, net_weight_kg, normalized_yarn_key")
         .eq("company_id", profile!.company_id!)
         .is("matched_tc_id", null)
         .order("created_at", { ascending: false });
@@ -339,7 +372,7 @@ export default function ReviewExtraction() {
     }
   }, [file]);
 
-  // Auto-link incoming stock based on matching invoice numbers
+  // Auto-link incoming stock using invoice normalization plus product-key compatibility.
   useEffect(() => {
     if (!incomingStock.length || !products.length || !shipments.length) return;
     
@@ -348,16 +381,20 @@ export default function ReviewExtraction() {
       const next = prev.map(p => {
         if (p.linked_incoming_stock_id) return p; // already linked
 
-        // find the shipment for this product to get its invoice number
         const shipment = shipments.find(s => s.shipment_no === p.shipment_no || (!s.shipment_no && s.shipment_doc_no));
         const invoiceNos = splitInvoiceReferences(shipment?.invoice_reference);
-        
-        if (invoiceNos.length) {
-          const match = incomingStock.find(inc => invoiceNos.includes(inc.invoice_no?.trim()?.toUpperCase()));
-          if (match) {
-            changed = true;
-            return { ...p, linked_incoming_stock_id: match.id };
-          }
+        if (!invoiceNos.length || !p.normalized_yarn_key) return p;
+
+        const invoiceSet = new Set(invoiceNos.flatMap((invoice) => invoiceVariants(invoice)));
+        const matches = incomingStock.filter((inc) => {
+          const sameInvoice = invoiceVariants(inc.invoice_no).some((variant) => invoiceSet.has(variant));
+          if (!sameInvoice) return false;
+          return normalizeIncomingStockKey(inc) === p.normalized_yarn_key;
+        });
+
+        if (matches.length === 1) {
+          changed = true;
+          return { ...p, linked_incoming_stock_id: matches[0].id };
         }
         return p;
       });
@@ -714,7 +751,7 @@ export default function ReviewExtraction() {
                       <Field label="Shipment no." value={s.shipment_no} onChange={v => setShipments(prev => prev.map((x, idx) => idx === i ? { ...x, shipment_no: v } : x))} />
                       <Field label="Date" type="date" value={s.shipment_date} onChange={v => setShipments(prev => prev.map((x, idx) => idx === i ? { ...x, shipment_date: v } : x))} />
                       <Field label="Doc no." value={s.shipment_doc_no} onChange={v => setShipments(prev => prev.map((x, idx) => idx === i ? { ...x, shipment_doc_no: v } : x))} />
-                      <Field label="Invoice" value={s.invoice_reference} onChange={v => setShipments(prev => prev.map((x, idx) => idx === i ? { ...x, invoice_reference: v } : x))} />
+                      <Field label="Invoice" value={s.invoice_reference} onChange={v => setShipments(prev => prev.map((x, idx) => idx === i ? { ...x, invoice_reference: cleanInvoiceReference(v) } : x))} />
                       <div className="col-span-2">
                         <Field label="Consignee" value={s.consignee_name} onChange={v => setShipments(prev => prev.map((x, idx) => idx === i ? { ...x, consignee_name: v } : x))} />
                       </div>

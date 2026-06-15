@@ -19,10 +19,9 @@ const cleanInvoiceReference = (value) => {
   const cleaned = value
     .replace(/\s+/g, ' ')
     .replace(/^(?:Invoice References?|Invoice No\.?)\s*[:\-]?\s*/i, '')
-    .replace(/\s*\(\s*\d{4}[\/\-\s]\d{1,2}[\/\-\s]\d{1,2}\s*\)\s*/g, ' ')
     .replace(/\s+(?:Consignee(?:\s+name\s+and\s+address|\s+Name)?|TE-ID|Shipment No\.?|Shipment Date|Gross Shipping Weight)\b.*$/i, '')
     .trim();
-  const token = cleaned.match(/\b[A-Z0-9][A-Z0-9/.\-]{4,}[A-Z0-9]\b/i)?.[0];
+  const token = cleaned.match(/\b[A-Z0-9][A-Z0-9/.\-]{4,}[A-Z0-9](?:\s*\(\s*\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}\s*\))?/i)?.[0];
   return token || cleaned || null;
 };
 

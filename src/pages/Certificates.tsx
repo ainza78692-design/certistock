@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import EmptyState from "@/components/EmptyState";
 import { fmtKg, fmtDate } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,6 +68,9 @@ export default function Certificates() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [showBulkDialog, setShowBulkDialog] = useState(false);
 
   const { data } = useQuery({
     queryKey: ["tcs", profile?.company_id],
@@ -164,9 +168,160 @@ export default function Certificates() {
     }
   };
 
+  const visibleCertificates = data || [];
+  const selectedCertificates = useMemo(
+    () => visibleCertificates.filter((certificate) => selectedIds.has(certificate.id)),
+    [selectedIds, visibleCertificates],
+  );
+
+  const isAllVisibleSelected = visibleCertificates.length > 0
+    && visibleCertificates.every((certificate) => selectedIds.has(certificate.id));
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(visibleCertificates.map((certificate) => certificate.id)));
+      return;
+    }
+    setSelectedIds(new Set());
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    const next = new Set(selectedIds);
+    if (checked) next.add(id);
+    else next.delete(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (!profile?.company_id || selectedCertificates.length === 0) return;
+
+    setIsBulkDeleting(true);
+    try {
+      if (isLocalBackend) {
+        const result = await localApi<{ deletedCount: number; blockedCount: number }>("/api/certificates", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: selectedCertificates.map((certificate) => certificate.id) }),
+        });
+
+        setSelectedIds(new Set());
+        queryClient.invalidateQueries({ queryKey: ["tcs", profile.company_id] });
+        queryClient.invalidateQueries({ queryKey: ["lots", profile.company_id] });
+        queryClient.invalidateQueries({ queryKey: ["suppliers", profile.company_id] });
+
+        if (result.blockedCount > 0) {
+          toast.success(`Deleted ${result.deletedCount} certificates. ${result.blockedCount} consumed certificate(s) were skipped.`);
+        } else {
+          toast.success(`Deleted ${result.deletedCount} certificates`);
+        }
+        return;
+      }
+
+      let deletedCount = 0;
+      let blockedCount = 0;
+
+      for (const certificate of selectedCertificates) {
+        const { count, error } = await supabase
+          .from("consumption_entries")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", profile.company_id)
+          .in(
+            "product_lot_id",
+            (
+              await supabase
+                .from("product_lots")
+                .select("id")
+                .eq("company_id", profile.company_id)
+                .eq("transaction_certificate_id", certificate.id)
+            ).data?.map((row) => row.id) || ["00000000-0000-0000-0000-000000000000"],
+          );
+
+        if (error || (count || 0) > 0) {
+          blockedCount += 1;
+          continue;
+        }
+
+        const lots = await supabase
+          .from("product_lots")
+          .select("id")
+          .eq("company_id", profile.company_id)
+          .eq("transaction_certificate_id", certificate.id);
+
+        const lotIds = lots.data?.map((row) => row.id) || [];
+        if (lotIds.length > 0) {
+          await supabase
+            .from("stock_ledger")
+            .delete()
+            .eq("company_id", profile.company_id)
+            .in("product_lot_id", lotIds);
+        }
+
+        const { error: certificateError } = await supabase
+          .from("transaction_certificates")
+          .delete()
+          .eq("company_id", profile.company_id)
+          .eq("id", certificate.id);
+
+        if (!certificateError) deletedCount += 1;
+      }
+
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["tcs", profile.company_id] });
+      queryClient.invalidateQueries({ queryKey: ["lots", profile.company_id] });
+      queryClient.invalidateQueries({ queryKey: ["suppliers", profile.company_id] });
+
+      if (blockedCount > 0) {
+        toast.success(`Deleted ${deletedCount} certificates. ${blockedCount} consumed certificate(s) were skipped.`);
+      } else {
+        toast.success(`Deleted ${deletedCount} certificates`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete certificates.");
+    } finally {
+      setIsBulkDeleting(false);
+      setShowBulkDialog(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
-      <PageHeader title="Transaction certificates" subtitle="All TCs ingested into your stock ledger." />
+      <PageHeader
+        title="Transaction certificates"
+        subtitle="All TCs ingested into your stock ledger."
+        actions={
+          selectedIds.size > 0 ? (
+            <AlertDialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="rounded-xl gap-2 border-border/60 hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive transition-all duration-300">
+                  <Trash2 className="h-4 w-4" />Delete Selected ({selectedIds.size})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="rounded-2xl">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete selected certificates?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This removes certificates, their unused stock lots, and inward ledger rows.
+                    Certificates with any consumed stock will be skipped and protected.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="rounded-xl" disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(event) => {
+                      event.preventDefault();
+                      handleBulkDelete();
+                    }}
+                    disabled={isBulkDeleting}
+                    className="rounded-xl bg-destructive hover:bg-destructive/90"
+                  >
+                    {isBulkDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Delete Selected
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : undefined
+        }
+      />
       <div className="surface overflow-hidden animate-fadeInUp">
         {!data?.length ? (
           <EmptyState
@@ -180,6 +335,13 @@ export default function Certificates() {
             <table className="data-table min-w-[900px]">
               <thead>
                 <tr>
+                  <th className="text-center w-[40px] pl-4">
+                    <Checkbox
+                      checked={isAllVisibleSelected}
+                      onCheckedChange={handleSelectAll}
+                      aria-label="Select all certificates"
+                    />
+                  </th>
                   <th className="text-left w-[160px]">TC number</th>
                   <th className="text-left">Supplier</th>
                   <th className="text-left w-[100px]">Issue date</th>
@@ -200,6 +362,13 @@ export default function Certificates() {
                       className="cursor-pointer"
                       onClick={() => navigate(`/lots?q=${t.tc_number}`)}
                     >
+                      <td className="text-center pl-4" onClick={(event) => event.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(t.id)}
+                          onCheckedChange={(checked) => handleSelectOne(t.id, !!checked)}
+                          aria-label={`Select certificate ${t.tc_number}`}
+                        />
+                      </td>
                       <td className="font-mono text-xs whitespace-nowrap">{t.tc_number}</td>
                       <td>
                         <span className="block truncate max-w-[320px]" title={supplierName}>

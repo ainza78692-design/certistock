@@ -112,6 +112,58 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
     return reply.send({ ok: true });
   });
 
+  app.delete("/api/certificates", { preHandler: requireUser }, async (request, reply) => {
+    const companyId = request.user!.companyId;
+    const { ids } = request.body as { ids: string[] };
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return reply.code(400).send({ error: "No ids provided" });
+    }
+
+    let deletedCount = 0;
+    let blockedCount = 0;
+
+    await withTransaction(async (client) => {
+      const safeCertificates = await client.query<{ id: string }>(
+        `select tc.id
+         from transaction_certificates tc
+         where tc.company_id = $1
+           and tc.id = any($2::uuid[])
+           and not exists (
+             select 1
+             from consumption_entries ce
+             join product_lots l on l.id = ce.product_lot_id
+             where l.company_id = $1 and l.transaction_certificate_id = tc.id
+           )`,
+        [companyId, ids],
+      );
+
+      const safeIds = safeCertificates.rows.map((row) => row.id);
+      blockedCount = ids.length - safeIds.length;
+      if (!safeIds.length) return;
+
+      await client.query(
+        `delete from stock_ledger
+         where company_id = $1
+           and product_lot_id in (
+             select id from product_lots where company_id = $1 and transaction_certificate_id = any($2::uuid[])
+           )`,
+        [companyId, safeIds],
+      );
+
+      const deleteResult = await client.query(
+        `delete from transaction_certificates
+         where company_id = $1 and id = any($2::uuid[])`,
+        [companyId, safeIds],
+      );
+
+      deletedCount = deleteResult.rowCount || 0;
+      await cleanupUnusedSuppliers(client, companyId);
+    });
+
+    return reply.send({ ok: true, deletedCount, blockedCount });
+  });
+
   app.get("/api/stock-lots", { preHandler: requireUser }, async (request) => {
     const companyId = request.user!.companyId;
     const result = await query(
