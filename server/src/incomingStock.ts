@@ -21,9 +21,13 @@ export async function reconcileIncomingStockForInvoices(input: {
   companyId: string;
   tcId: string;
   invoiceReferences: unknown[];
+  excludeIncomingStockIds?: unknown[];
 }) {
   const invoiceNos = Array.from(
     new Set(input.invoiceReferences.flatMap(splitInvoiceReferences).filter(Boolean)),
+  );
+  const excludeIncomingStockIds = Array.from(
+    new Set((input.excludeIncomingStockIds || []).map((id) => String(id || "").trim()).filter(Boolean)),
   );
 
   if (!invoiceNos.length) {
@@ -34,8 +38,9 @@ export async function reconcileIncomingStockForInvoices(input: {
     `delete from incoming_stock
      where company_id = $1
        and upper(btrim(invoice_no)) = any($2::text[])
+       and (cardinality($3::uuid[]) = 0 or id <> all($3::uuid[]))
      returning *`,
-    [input.companyId, invoiceNos],
+    [input.companyId, invoiceNos, excludeIncomingStockIds],
   );
 
   return {

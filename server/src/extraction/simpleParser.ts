@@ -29,6 +29,18 @@ const firstMatch = (text: string, patterns: RegExp[]) => {
   return null;
 };
 
+const cleanInvoiceReference = (value?: string | null) => {
+  if (!value) return null;
+  const cleaned = value
+    .replace(/\s+/g, " ")
+    .replace(/^(?:Invoice References?|Invoice No\.?)\s*[:\-]?\s*/i, "")
+    .replace(/\s*\(\s*\d{4}[\/\-\s]\d{1,2}[\/\-\s]\d{1,2}\s*\)\s*/g, " ")
+    .replace(/\s+(?:Consignee(?:\s+name\s+and\s+address|\s+Name)?|TE-ID|Shipment No\.?|Shipment Date|Gross Shipping Weight)\b.*$/i, "")
+    .trim();
+  const token = cleaned.match(/\b[A-Z0-9][A-Z0-9/.\-]{4,}[A-Z0-9]\b/i)?.[0];
+  return token || cleaned || null;
+};
+
 const sectionBetween = (text: string, start: RegExp, end: RegExp) => {
   const startMatch = start.exec(text);
   if (!startMatch) return "";
@@ -183,7 +195,13 @@ export function parseSimpleTcExtraction(text: string, aliases: { alias_text: str
       shipment_no: match[1],
       shipment_date: firstMatch(block, [/Shipment Date\s*[:\-]?\s*([0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4})/i]),
       shipment_doc_no: firstMatch(block, [/Shipment Doc No\.?\s*[:\-]?\s*(.+?)(?:\s+Gross Shipping Weight\b|$)/i]),
-      invoice_reference: firstMatch(block, [/Invoice References?\s*[:\-]?\s*(.+?)(?:\s+Shipment No\.?|\s+Transaction Certificate Number|\s+10\.?\s*Certified Products|$)/i]),
+      invoice_reference: cleanInvoiceReference(firstMatch(block, [
+        /Invoice References?\s*[:\-]?\s*(.+?)(?:\s+Shipment No\.?|\s+Transaction Certificate Number|\s+10\.?\s*Certified Products|$)/i,
+        // Some PDFs don't label invoice numbers. Capture common invoice-like tokens (e.g. ABC/25-26/08646)
+        /([A-Z0-9\/\.\-]{6,})(?:\s*\(\s*\d{4}[\/\-\s]\d{1,2}[\/\-\s]\d{1,2}\s*\))?(?=\s+(?:Consignee|Consignee Name|TE-ID|Shipment No\.?|$))/i,
+        // Also try common "Invoice No" label
+        /Invoice No\.?\s*[:\-]?\s*(.+?)(?:\s+Consignee|\s+Shipment No\.?|$)/i,
+      ])),
       gross_shipping_weight_kg: weightFromLabel(block, "Gross Shipping Weight"),
       consignee_name: cleanPartyName(firstMatch(block, [/Consignee Name and Address\s*[:\-]?\s*(.+?)(?:\s+TE-ID\b|\s+Invoice References?\b|$)/i])),
       consignee_te_id: firstMatch(block, [/TE-ID\s*[:\-]?\s*(TE-[A-Za-z0-9-]+)/i]),

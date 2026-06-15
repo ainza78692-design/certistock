@@ -176,6 +176,12 @@ const cleanInputTcs = (value?: string | null) => {
   return cleaned;
 };
 
+const splitInvoiceReferences = (value?: string | null) =>
+  (value || "")
+    .split(/\s*(?:,|;|\n|\r|\band\b)\s*/i)
+    .map((part) => part.trim().toUpperCase())
+    .filter(Boolean);
+
 export default function ReviewExtraction() {
   const { fileId } = useParams();
   const navigate = useNavigate();
@@ -344,10 +350,10 @@ export default function ReviewExtraction() {
 
         // find the shipment for this product to get its invoice number
         const shipment = shipments.find(s => s.shipment_no === p.shipment_no || (!s.shipment_no && s.shipment_doc_no));
-        const invoiceNo = shipment?.invoice_reference?.trim()?.toUpperCase();
+        const invoiceNos = splitInvoiceReferences(shipment?.invoice_reference);
         
-        if (invoiceNo) {
-          const match = incomingStock.find(inc => inc.invoice_no?.trim()?.toUpperCase() === invoiceNo);
+        if (invoiceNos.length) {
+          const match = incomingStock.find(inc => invoiceNos.includes(inc.invoice_no?.trim()?.toUpperCase()));
           if (match) {
             changed = true;
             return { ...p, linked_incoming_stock_id: match.id };
@@ -357,7 +363,7 @@ export default function ReviewExtraction() {
       });
       return changed ? next : prev;
     });
-  }, [incomingStock, shipments]);
+  }, [incomingStock, shipments, products.length]);
 
   const updateProduct = (i: number, patch: Partial<ProductLine>) => {
     setProducts(prev => prev.map((p, idx) => {
@@ -372,7 +378,11 @@ export default function ReviewExtraction() {
           next.is_custom_product = false;
           next.needs_manual_review = !patch.normalized_yarn_key;
         }
-      } else {
+      } else if (
+        patch.additional_info_raw !== undefined ||
+        patch.yarn_count_raw !== undefined ||
+        patch.article_no !== undefined
+      ) {
         next.normalized_yarn_key = normalizeProductKey(next.additional_info_raw || next.yarn_count_raw, next.article_no);
         next.needs_manual_review = !next.normalized_yarn_key;
       }
@@ -433,7 +443,13 @@ export default function ReviewExtraction() {
           body: JSON.stringify({ tc: normalizedTc, shipments, products }),
         });
         if (!data?.ok) throw new Error(data?.error || "Failed to approve");
-        toast.success("TC approved - stock lots created");
+        // Inform user if any incoming stock was reconciled by invoice fallback
+        const matchedCount = data?.incomingReconciliation?.matchedCount || 0;
+        if (matchedCount > 0) {
+          toast.success(`TC approved - ${matchedCount} incoming stock record(s) reconciled`);
+        } else {
+          toast.success("TC approved - stock lots created");
+        }
         navigate(`/lots?q=${encodeURIComponent(tc.tc_number)}`);
         return;
       }

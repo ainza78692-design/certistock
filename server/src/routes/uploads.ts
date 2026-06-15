@@ -329,8 +329,11 @@ export async function registerUploadRoutes(app: FastifyInstance) {
         shipmentMap[sh.shipment_no] = ship.rows[0].id;
       }
 
-      // Reconciliation is now handled per-product using linked_incoming_stock_id
-      const incomingReconciliation = { matched: [], matchedCount: 0 };
+      let incomingReconciliation: Awaited<ReturnType<typeof reconcileIncomingStockForInvoices>> = {
+        matched: [],
+        matchedCount: 0,
+      };
+      const linkedIncomingStockIds = new Set<string>();
 
       const lots = [];
       for (const p of products) {
@@ -411,6 +414,7 @@ export async function registerUploadRoutes(app: FastifyInstance) {
         );
 
         if (p.linked_incoming_stock_id) {
+          linkedIncomingStockIds.add(String(p.linked_incoming_stock_id));
           const incRes = await client.query(
             `select net_weight_kg from incoming_stock where id = $1 and company_id = $2`,
             [p.linked_incoming_stock_id, user.companyId]
@@ -431,6 +435,23 @@ export async function registerUploadRoutes(app: FastifyInstance) {
             }
           }
         }
+      }
+
+      // Fallback invoice reconciliation runs after explicit product-level deductions,
+      // and skips rows the user already linked manually.
+      try {
+        if (invoiceReferences.length) {
+          incomingReconciliation = await reconcileIncomingStockForInvoices({
+            client,
+            companyId: user.companyId,
+            tcId: tcRow.rows[0].id,
+            invoiceReferences,
+            excludeIncomingStockIds: Array.from(linkedIncomingStockIds),
+          });
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("Invoice reconciliation failed for upload", id, err instanceof Error ? err.message : String(err));
       }
 
       await client.query(
