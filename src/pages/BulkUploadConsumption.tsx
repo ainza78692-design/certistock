@@ -6,6 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { fmtKg, fmtDate } from "@/lib/format";
 import { buildBulkLotLabel } from "@/lib/bulkConsumptionMatching";
 import { toast } from "sonner";
@@ -32,6 +42,7 @@ export default function BulkUploadConsumption() {
   const {
     step, parsed, lines, lots, stats, processing, processedCount, processableCount,
     handleFile, toggleSkip, updateLot, updateWeight, processAll, reset,
+    pendingDuplicateConfirmation, confirmDuplicateProcessing, cancelDuplicateProcessing,
   } = useBulkConsumption();
 
   const onFile = useCallback(async (file: File | undefined) => {
@@ -218,6 +229,34 @@ export default function BulkUploadConsumption() {
           </table>
         </div>
       </div>
+
+      <AlertDialog open={pendingDuplicateConfirmation} onOpenChange={(open) => { if (!open) cancelDuplicateProcessing(); }}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Process duplicate consumption entries again?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Some rows match an existing consumption by the same Invoice No and E-Way Bill No combination. If you continue, those rows will be processed again and stock will reduce again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-56 overflow-y-auto rounded-xl border border-border/60 bg-muted/20 p-3 text-xs space-y-2">
+            {lines
+              .filter((line) => line.status === "duplicate")
+              .map((line) => (
+                <div key={line.id} className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-mono text-foreground">{line.invoiceNo || "—"}</div>
+                    <div className="text-muted-foreground">{line.ewayBillNo || "No E-Way Bill"}</div>
+                  </div>
+                  <div className="shrink-0 text-muted-foreground">{fmtKg(line.consumedWeightKg, 2)}</div>
+                </div>
+              ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl" onClick={cancelDuplicateProcessing}>No</AlertDialogCancel>
+            <AlertDialogAction className="rounded-xl" onClick={confirmDuplicateProcessing}>Yes, process again</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

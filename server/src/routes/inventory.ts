@@ -10,8 +10,18 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
     const companyId = request.user!.companyId;
     const [lots, incomingStock, pending, consumption] = await Promise.all([
       query(
-        `select certified_weight_kg, remaining_stock_kg, consumed_stock_kg, status, normalized_yarn_key, created_at
-         from product_lots where company_id = $1`,
+        `select
+           l.certified_weight_kg,
+           l.remaining_stock_kg,
+           l.consumed_stock_kg,
+           l.opening_stock_kg,
+           l.status,
+           l.normalized_yarn_key,
+           l.created_at,
+           sh.shipment_date
+         from product_lots l
+         left join shipments sh on sh.id = l.shipment_id
+         where l.company_id = $1`,
         [companyId],
       ),
       query(

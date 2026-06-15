@@ -8,7 +8,7 @@ import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -28,6 +28,7 @@ export function EntityPage({ table, label, fields }: { table: "customers"|"suppl
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [editingRow, setEditingRow] = useState<any | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const { data } = useQuery({
@@ -63,6 +64,57 @@ export function EntityPage({ table, label, fields }: { table: "customers"|"suppl
     const { error } = await supabase.from(table).insert({ company_id: profile!.company_id!, ...form } as any);
     if (error) toast.error(error.message);
     else { toast.success("Created"); qc.invalidateQueries({ queryKey: [table] }); setOpen(false); setForm({}); }
+  };
+
+  const startEdit = (row: any) => {
+    setEditingRow(row);
+    setForm(
+      Object.fromEntries(
+        fields.map((field) => [field.key, row[field.key] || ""]),
+      ),
+    );
+  };
+
+  const closeEdit = () => {
+    setEditingRow(null);
+    setForm({});
+  };
+
+  const update = async () => {
+    if (!editingRow) return;
+    const nameField = table === "customers" ? "customer_name" : "supplier_name";
+    if (!form[nameField]) return toast.error("Name required");
+
+    if (isLocalBackend) {
+      try {
+        await localApi(`/api/${table}/${editingRow.id}`, {
+          method: "PUT",
+          body: JSON.stringify(form),
+        });
+        toast.success("Updated");
+        qc.invalidateQueries({ queryKey: [table] });
+        qc.invalidateQueries({ queryKey: ["global_search"] });
+        closeEdit();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not update");
+      }
+      return;
+    }
+
+    const { error } = await supabase
+      .from(table)
+      .update(form as any)
+      .eq("company_id", profile!.company_id!)
+      .eq("id", editingRow.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    toast.success("Updated");
+    qc.invalidateQueries({ queryKey: [table] });
+    qc.invalidateQueries({ queryKey: ["global_search"] });
+    closeEdit();
   };
 
   const remove = async (row: any) => {
@@ -144,7 +196,7 @@ export function EntityPage({ table, label, fields }: { table: "customers"|"suppl
             <thead>
               <tr>
                 {fields.map(f => <th key={f.key} className="text-left">{f.label}</th>)}
-                <th className="w-[80px] text-right">Action</th>
+                <th className="w-[120px] text-right">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -156,27 +208,37 @@ export function EntityPage({ table, label, fields }: { table: "customers"|"suppl
                     </td>
                   ))}
                   <td className="text-right">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive" disabled={deletingId === r.id}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent className="rounded-2xl">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete this {label.slice(0, -1).toLowerCase()}?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This only deletes unused master records. Records still linked to certificates or outward sales are protected.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => remove(r)} className="rounded-xl bg-destructive hover:bg-destructive/90">
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+                        onClick={() => startEdit(r)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive" disabled={deletingId === r.id}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent className="rounded-2xl">
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete this {label.slice(0, -1).toLowerCase()}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This only deletes unused master records. Records still linked to certificates or outward sales are protected.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => remove(r)} className="rounded-xl bg-destructive hover:bg-destructive/90">
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </td>
                 </tr>
               )) : <tr><td colSpan={fields.length + 1} className="text-center py-16 text-muted-foreground text-sm">No {label.toLowerCase()} yet.</td></tr>}
@@ -184,6 +246,28 @@ export function EntityPage({ table, label, fields }: { table: "customers"|"suppl
           </table>
         </div>
       </div>
+
+      <Dialog open={!!editingRow} onOpenChange={(next) => { if (!next) closeEdit(); }}>
+        <DialogContent className="rounded-2xl">
+          <DialogHeader><DialogTitle>Edit {label.slice(0, -1).toLowerCase()}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            {fields.map(f => (
+              <div key={f.key} className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground">{f.label}</Label>
+                <Input
+                  value={form[f.key] || ""}
+                  onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                  className="rounded-xl h-10 bg-background border-border focus-visible:border-primary/40 focus-visible:ring-1 focus-visible:ring-primary/15 transition-all duration-300"
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEdit} className="rounded-xl">Cancel</Button>
+            <Button onClick={update} className="rounded-xl shadow-sm">Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

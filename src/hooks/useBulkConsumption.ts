@@ -28,6 +28,9 @@ export interface ConsumptionLine {
   netWeightKg: number | null;
   grossWeightKg: number | null;
   ewayBillNo: string;
+  duplicateKey: string | null;
+  baseStatus: Exclude<MatchStatus, "duplicate" | "skipped" | "done" | "error">;
+  baseErrorMsg: string;
 }
 
 export type BulkStep = "upload" | "review" | "processing" | "done";
@@ -49,6 +52,17 @@ export function useBulkConsumption() {
   const [lines, setLines] = useState<ConsumptionLine[]>([]);
   const [processing, setProcessing] = useState(false);
   const [processedCount, setProcessedCount] = useState(0);
+  const [pendingDuplicateConfirmation, setPendingDuplicateConfirmation] = useState(false);
+
+  const normalizeDuplicateField = (value: unknown) =>
+    String(value || "").replace(/\s+/g, " ").trim().toUpperCase();
+
+  const buildDuplicateKey = (invoiceNo: unknown, ewayBillNo: unknown) => {
+    const invoice = normalizeDuplicateField(invoiceNo);
+    const eway = normalizeDuplicateField(ewayBillNo);
+    if (!invoice || !eway) return null;
+    return `${invoice}__${eway}`;
+  };
 
   const { data: lots } = useQuery({
     queryKey: ["bulk-lots", cid],
@@ -94,11 +108,22 @@ export function useBulkConsumption() {
     queryFn: async () => {
       if (isLocalBackend) {
         const data = await localApi<any[]>("/api/outward-sales");
-        return new Set((data || []).map((d: any) => d.outward_invoice_no?.trim().toUpperCase()).filter(Boolean));
+        return new Set(
+          (data || [])
+            .map((d: any) => buildDuplicateKey(d.outward_invoice_no, d.transport_doc_no))
+            .filter(Boolean),
+        );
       }
 
-      const { data } = await supabase.from("outward_sales").select("outward_invoice_no").eq("company_id", cid!);
-      return new Set((data || []).map((d: any) => d.outward_invoice_no?.trim().toUpperCase()).filter(Boolean));
+      const { data } = await supabase
+        .from("outward_sales")
+        .select("outward_invoice_no, transport_doc_no")
+        .eq("company_id", cid!);
+      return new Set(
+        (data || [])
+          .map((d: any) => buildDuplicateKey(d.outward_invoice_no, d.transport_doc_no))
+          .filter(Boolean),
+      );
     },
   });
 
@@ -128,7 +153,8 @@ export function useBulkConsumption() {
     let lineId = 0;
 
     for (const row of result.rows) {
-      const isDuplicate = existingInvoices?.has(row.invoiceNo.trim().toUpperCase()) || false;
+      const duplicateKey = buildDuplicateKey(row.invoiceNo, row.ewayBillNo);
+      const isDuplicate = duplicateKey ? existingInvoices?.has(duplicateKey) || false : false;
       const custMatch = findCustomer(row.buyerName);
 
       if (row.tcEntries.length > 0) {
@@ -143,6 +169,14 @@ export function useBulkConsumption() {
               ? Number(row.lossPercent)
               : null;
           const outwardCertifiedWeightKg = calculateOutwardCertifiedWeight(tc.consumedWeightKg, lossPercent);
+          const baseStatus: ConsumptionLine["baseStatus"] =
+            match.kind === "ambiguous" ? "ambiguous" : lot && lotOk ? "matched" : lot ? "partial" : "unmatched";
+          const baseErrorMsg =
+            match.kind === "ambiguous"
+              ? `Multiple lots found for TC ${tc.tcNumber}, shipment ${shipmentNo}. Select the correct lot.`
+              : !lot
+                ? `No matching lot found for TC ${tc.tcNumber}${shipmentNo ? `, shipment ${shipmentNo}` : ""}`
+                : !lotOk ? "Lot has insufficient stock" : "";
 
           newLines.push({
             id: `line-${lineId++}`,
@@ -156,25 +190,26 @@ export function useBulkConsumption() {
             lotRemaining: lot?.remaining_stock_kg || 0,
             customerId: custMatch?.id || null,
             customerName: custMatch?.customer_name || row.buyerName,
-            status: isDuplicate ? "duplicate" : (match.kind === "ambiguous" ? "ambiguous" : lot && lotOk ? "matched" : lot ? "partial" : "unmatched"),
+            status: isDuplicate ? "duplicate" : baseStatus,
             errorMsg: isDuplicate
-              ? "Invoice already processed"
-              : match.kind === "ambiguous"
-                ? `Multiple lots found for TC ${tc.tcNumber}, shipment ${shipmentNo}. Select the correct lot.`
-                : !lot
-                  ? `No matching lot found for TC ${tc.tcNumber}${shipmentNo ? `, shipment ${shipmentNo}` : ""}`
-                  : !lotOk ? "Lot has insufficient stock" : "",
+              ? "Consumption already processed for this Invoice No + E-Way Bill No combination"
+              : baseErrorMsg,
             invoiceNo: row.invoiceNo,
             invoiceDate: row.invoiceDate,
             netWeightKg: row.netWeightKg,
             grossWeightKg: row.grossWeightKg,
             ewayBillNo: row.ewayBillNo,
+            duplicateKey,
+            baseStatus,
+            baseErrorMsg,
           });
         }
       } else {
         const wt = row.certWeightKg || 0;
         const lot = findLotByYarnKey(row.normalizedYarnKey, wt) as any;
         const lotOk = lot && lot.remaining_stock_kg >= wt;
+        const baseStatus: ConsumptionLine["baseStatus"] = lot && lotOk ? "matched" : lot ? "partial" : "unmatched";
+        const baseErrorMsg = !lot ? `No lot found for ${row.normalizedYarnKey || row.count}` : (!lotOk ? "Lot has insufficient stock" : "");
         newLines.push({
           id: `line-${lineId++}`,
           sourceRow: row,
@@ -187,24 +222,28 @@ export function useBulkConsumption() {
           lotRemaining: lot?.remaining_stock_kg || 0,
           customerId: custMatch?.id || null,
           customerName: custMatch?.customer_name || row.buyerName,
-          status: isDuplicate ? "duplicate" : (lot && lotOk ? "matched" : lot ? "partial" : "unmatched"),
-          errorMsg: isDuplicate ? "Invoice already processed" : (!lot ? `No lot found for ${row.normalizedYarnKey || row.count}` : (!lotOk ? "Lot has insufficient stock" : "")),
+          status: isDuplicate ? "duplicate" : baseStatus,
+          errorMsg: isDuplicate ? "Consumption already processed for this Invoice No + E-Way Bill No combination" : baseErrorMsg,
           invoiceNo: row.invoiceNo,
           invoiceDate: row.invoiceDate,
           netWeightKg: row.netWeightKg,
           grossWeightKg: row.grossWeightKg,
           ewayBillNo: row.ewayBillNo,
+          duplicateKey,
+          baseStatus,
+          baseErrorMsg,
         });
       }
     }
 
     setLines(newLines);
     setStep("review");
+    setPendingDuplicateConfirmation(false);
   }, [existingInvoices, findCustomer, findLotByTc, findLotByYarnKey]);
 
   const toggleSkip = useCallback((lineId: string) => {
     setLines(prev => prev.map(l => l.id === lineId
-      ? { ...l, status: l.status === "skipped" ? (l.lotId ? "matched" : "unmatched") : "skipped" }
+      ? { ...l, status: l.status === "skipped" ? l.baseStatus : "skipped", errorMsg: l.status === "skipped" ? l.baseErrorMsg : l.errorMsg }
       : l
     ));
   }, []);
@@ -218,8 +257,12 @@ export function useBulkConsumption() {
       lotId: lot.id,
       lotLabel: buildBulkLotLabel(lot),
       lotRemaining: lot.remaining_stock_kg,
-      status: lot.remaining_stock_kg >= l.consumedWeightKg ? "matched" : "partial",
-      errorMsg: lot.remaining_stock_kg < l.consumedWeightKg ? "Lot has insufficient stock" : "",
+      baseStatus: lot.remaining_stock_kg >= l.consumedWeightKg ? "matched" : "partial",
+      baseErrorMsg: lot.remaining_stock_kg < l.consumedWeightKg ? "Lot has insufficient stock" : "",
+      status: l.status === "duplicate" ? "duplicate" : (lot.remaining_stock_kg >= l.consumedWeightKg ? "matched" : "partial"),
+      errorMsg: l.status === "duplicate"
+        ? "Consumption already processed for this Invoice No + E-Way Bill No combination"
+        : lot.remaining_stock_kg < l.consumedWeightKg ? "Lot has insufficient stock" : "",
     } : l));
   }, [lots]);
 
@@ -228,17 +271,23 @@ export function useBulkConsumption() {
       ...l,
       consumedWeightKg: weight,
       outwardCertifiedWeightKg: calculateOutwardCertifiedWeight(weight, l.lossPercent),
-      status: l.lotId && l.lotRemaining >= weight ? "matched" : l.status,
-      errorMsg: l.lotId && l.lotRemaining < weight ? "Lot has insufficient stock" : l.errorMsg,
+      baseStatus: l.lotId && l.lotRemaining >= weight ? "matched" : l.baseStatus === "matched" ? "partial" : l.baseStatus,
+      baseErrorMsg: l.lotId && l.lotRemaining < weight ? "Lot has insufficient stock" : "",
+      status: l.status === "duplicate"
+        ? "duplicate"
+        : l.lotId && l.lotRemaining >= weight ? "matched" : l.baseStatus === "matched" ? "partial" : l.status,
+      errorMsg: l.status === "duplicate"
+        ? "Consumption already processed for this Invoice No + E-Way Bill No combination"
+        : l.lotId && l.lotRemaining < weight ? "Lot has insufficient stock" : "",
     } : l));
   }, []);
 
-  const processAll = useCallback(async () => {
+  const runProcessAll = useCallback(async (sourceLines: ConsumptionLine[], allowDuplicatePair: boolean) => {
     setStep("processing");
     setProcessing(true);
     setProcessedCount(0);
 
-    const toProcess = lines.filter(l => l.status === "matched" && l.lotId);
+    const toProcess = sourceLines.filter(l => l.status === "matched" && l.lotId);
 
     for (let i = 0; i < toProcess.length; i++) {
       const line = toProcess[i];
@@ -264,6 +313,7 @@ export function useBulkConsumption() {
                 product_name: line.sourceRow.composition || null,
                 normalized_yarn_key: line.sourceRow.normalizedYarnKey || null,
               },
+              allowDuplicatePair,
             }),
           });
           if (!data?.ok) throw new Error(data?.error || "Failed");
@@ -292,6 +342,7 @@ export function useBulkConsumption() {
               product_name: line.sourceRow.composition || null,
               normalized_yarn_key: line.sourceRow.normalizedYarnKey || null,
             },
+            allowDuplicatePair,
           },
         });
         if (error) throw error;
@@ -306,7 +357,31 @@ export function useBulkConsumption() {
 
     setProcessing(false);
     setStep("done");
-  }, [lines]);
+  }, []);
+
+  const processAll = useCallback(async () => {
+    const duplicateLines = lines.filter((l) => l.status === "duplicate" && l.duplicateKey);
+    if (duplicateLines.length) {
+      setPendingDuplicateConfirmation(true);
+      return;
+    }
+    await runProcessAll(lines, false);
+  }, [lines, runProcessAll]);
+
+  const confirmDuplicateProcessing = useCallback(async () => {
+    const nextLines = lines.map((line) => (
+      line.status === "duplicate"
+        ? { ...line, status: line.baseStatus, errorMsg: line.baseErrorMsg }
+        : line
+    ));
+    setLines(nextLines);
+    setPendingDuplicateConfirmation(false);
+    await runProcessAll(nextLines, true);
+  }, [lines, runProcessAll]);
+
+  const cancelDuplicateProcessing = useCallback(() => {
+    setPendingDuplicateConfirmation(false);
+  }, []);
 
   const stats = {
     total: lines.length,
@@ -328,10 +403,12 @@ export function useBulkConsumption() {
     setLines([]);
     setStep("upload");
     setProcessedCount(0);
+    setPendingDuplicateConfirmation(false);
   }, []);
 
   return {
     step, parsed, lines, lots, customers, stats, processing, processedCount, processableCount,
     handleFile, toggleSkip, updateLot, updateWeight, processAll, reset, setStep,
+    pendingDuplicateConfirmation, confirmDuplicateProcessing, cancelDuplicateProcessing,
   };
 }

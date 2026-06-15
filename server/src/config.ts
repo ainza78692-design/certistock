@@ -27,6 +27,7 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   host: process.env.LOCAL_API_HOST ?? "0.0.0.0",
   port: Number(process.env.LOCAL_API_PORT ?? 8787),
+  adminDeletePin: process.env.ADMIN_DELETE_PIN ?? "nehal@123",
   databaseUrl: required("DATABASE_URL", isProduction ? undefined : "postgres://certistock:certistock@127.0.0.1:5432/certistock_utf8"),
   jwtSecret: required("JWT_SECRET", isProduction ? undefined : "change-this-local-development-secret"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",

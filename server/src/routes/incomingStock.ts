@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { assertAdminDeletePin } from "../adminActions.js";
 import { requireUser } from "../auth.js";
 import { query, withTransaction } from "../db.js";
 import {
@@ -18,6 +19,11 @@ const incomingStockSchema = z.object({
 const reconcileSchema = z.object({
   tc_id: z.string().uuid().optional(),
   invoice_references: z.array(z.string()).optional().default([]),
+});
+
+const bulkDeleteSchema = z.object({
+  pin: z.string().trim().min(1),
+  ids: z.array(z.string().uuid()).optional().default([]),
 });
 
 export async function registerIncomingStockRoutes(app: FastifyInstance) {
@@ -124,6 +130,26 @@ export async function registerIncomingStockRoutes(app: FastifyInstance) {
     );
     if (!result.rows[0]) return reply.code(404).send({ error: "Incoming stock not found" });
     return { ok: true };
+  });
+
+  app.post("/api/incoming-stock/delete-all", { preHandler: requireUser }, async (request, reply) => {
+    const user = request.user!;
+    const input = bulkDeleteSchema.parse(request.body || {});
+    assertAdminDeletePin(input.pin);
+
+    const result = await query(
+      `delete from incoming_stock
+       where company_id = $1
+         and matched_tc_id is null
+         and (
+           cardinality($2::uuid[]) = 0
+           or id = any($2::uuid[])
+         )
+       returning id`,
+      [user.companyId, input.ids],
+    );
+
+    return reply.send({ ok: true, deletedCount: result.rowCount || 0 });
   });
 
   app.post("/api/incoming-stock/reconcile", { preHandler: requireUser }, async (request) => {

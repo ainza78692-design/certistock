@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DatePreset, getDateRange, matchesDateRange } from "@/lib/dateFilters";
 import { toast } from "sonner";
 import { exportToXlsx } from "@/lib/exportUtils";
+import AdminPinDialog from "@/components/AdminPinDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,8 @@ export default function Consumption() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const { data } = useQuery({
     queryKey: ["consumption", profile?.company_id],
@@ -125,6 +128,46 @@ export default function Consumption() {
     }
   };
 
+  const bulkDeleteConsumption = async (pin: string) => {
+    if (!filtered.length) {
+      toast.error("No consumption rows to delete");
+      return;
+    }
+
+    setBulkDeleting(true);
+    try {
+      if (!isLocalBackend) {
+        throw new Error("Bulk delete is available only in local backend mode");
+      }
+
+      const data = await localApi<any>("/api/consumption/delete-all", {
+        method: "POST",
+        body: JSON.stringify({
+          pin,
+          ids: filtered.map((entry: any) => entry.id),
+        }),
+      });
+      if (!data?.ok) throw new Error(data?.error || "Could not bulk delete consumption");
+
+      if (data.xlsx?.status === "ready") {
+        toast.success(`${data.deletedCount || 0} consumption record(s) deleted, stock restored, and Mass Balance XLSX updated`);
+      } else {
+        toast.warning(`${data.deletedCount || 0} consumption record(s) deleted, but some XLSX files need regeneration`);
+      }
+
+      setBulkDeleteOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["consumption", profile?.company_id] });
+      queryClient.invalidateQueries({ queryKey: ["lots", profile?.company_id] });
+      queryClient.invalidateQueries({ queryKey: ["customers", profile?.company_id] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-raw"] });
+      queryClient.invalidateQueries({ queryKey: ["global_search"] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not bulk delete consumption");
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const exportExcel = () => {
     if (!filtered || !filtered.length) return;
     
@@ -150,6 +193,16 @@ export default function Consumption() {
             <Button variant="outline" onClick={exportExcel} className="rounded-xl gap-2 border-border/60 hover:border-primary/25 hover:bg-primary/[0.02] transition-all duration-300">
               <ShoppingCart className="h-4 w-4" />Export Excel
             </Button>
+            {isLocalBackend ? (
+              <Button
+                variant="outline"
+                onClick={() => setBulkDeleteOpen(true)}
+                disabled={!filtered.length}
+                className="rounded-xl gap-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />Delete All Visible
+              </Button>
+            ) : null}
             <Button variant="outline" onClick={() => navigate("/consumption/bulk")} className="rounded-xl gap-2 border-border/60 hover:border-primary/25 hover:bg-primary/[0.02] transition-all duration-300">
               <Upload className="h-4 w-4" />Bulk Upload
             </Button>
@@ -257,6 +310,16 @@ export default function Consumption() {
           </div>
         )}
       </div>
+
+      <AdminPinDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title="Delete all visible consumption?"
+        description={`This will reverse and delete ${filtered.length} visible consumption record(s). Enter Nehal's admin PIN to continue.`}
+        confirmLabel={bulkDeleting ? "Deleting..." : "Delete all"}
+        busy={bulkDeleting}
+        onConfirm={bulkDeleteConsumption}
+      />
     </div>
   );
 }

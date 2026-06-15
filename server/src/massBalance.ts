@@ -1,5 +1,6 @@
 import { config } from "./config.js";
 import { query } from "./db.js";
+import { buildCombinedProductName } from "./productName.js";
 import { buckets, buildMassBalanceStoragePath, massBalanceFileName, writeStoredFile } from "./storage.js";
 
 function toNumber(value: unknown): number | null {
@@ -153,6 +154,11 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
     lot: {
       id: lot.id,
       normalized_yarn_key: lot.normalized_yarn_key ?? null,
+      product_name: buildCombinedProductName([
+        lot.product_category,
+        lot.product_detail,
+        lot.material_composition,
+      ]),
       article_no: lot.article_no ?? null,
       product_no: lot.product_no ?? null,
       number_of_units: lot.number_of_units ?? null,

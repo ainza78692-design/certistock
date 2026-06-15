@@ -15,6 +15,8 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import AdminPinDialog from "@/components/AdminPinDialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +29,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { fmtDate, fmtKg, normalizeProductKey } from "@/lib/format";
+import { buildMonthlyAnalytics, getAvailableYears } from "@/lib/monthAnalytics";
 
 type IncomingStockRow = {
   id: string;
@@ -69,6 +72,12 @@ export default function LiveStock() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
+  const [selectedYear, setSelectedYear] = useState(String(currentYear));
+  const [selectedMonth, setSelectedMonth] = useState(String(currentMonth));
 
   const cid = profile?.company_id;
   const urlQuery = searchParams.get("q") || "";
@@ -93,25 +102,30 @@ export default function LiveStock() {
     },
   });
 
-  const { data: certifiedSummary = [] } = useQuery({
-    queryKey: ["product-stock-summary", cid],
+  const { data: stockAnalyticsRaw } = useQuery({
+    queryKey: ["live-stock-analytics", cid],
     enabled: !!cid,
     queryFn: async () => {
-      if (isLocalBackend) return localApi<any[]>("/api/product-stock-summary");
-      const { data, error } = await (supabase as any)
-        .from("product_lots")
-        .select("normalized_yarn_key, remaining_stock_kg")
-        .eq("company_id", cid);
-      if (error) throw error;
-      const totals: Record<string, number> = {};
-      (data || []).forEach((lot: any) => {
-        const key = lot.normalized_yarn_key || "Unmapped";
-        totals[key] = (totals[key] || 0) + Number(lot.remaining_stock_kg || 0);
-      });
-      return Object.entries(totals).map(([normalized_yarn_key, remaining_stock_kg]) => ({
-        normalized_yarn_key,
-        remaining_stock_kg,
-      }));
+      if (isLocalBackend) {
+        return localApi<{ lots: any[]; consumption: any[] }>("/api/dashboard");
+      }
+
+      const [lots, consumption] = await Promise.all([
+        supabase.from("product_lots")
+          .select("opening_stock_kg, certified_weight_kg, shipments(shipment_date)")
+          .eq("company_id", cid!),
+        supabase.from("consumption_entries")
+          .select("consumed_weight_kg, consumption_date")
+          .eq("company_id", cid!),
+      ]);
+
+      return {
+        lots: (lots.data || []).map((lot: any) => ({
+          ...lot,
+          shipment_date: lot.shipments?.shipment_date || null,
+        })),
+        consumption: consumption.data || [],
+      };
     },
   });
 
@@ -123,25 +137,44 @@ export default function LiveStock() {
 
   const filtered = useMemo(() => {
     const term = q.trim().toUpperCase();
-    if (!term) return incoming;
-    return incoming.filter((row) => searchText(row).includes(term) || row.normalized_yarn_key === normalizedQuery);
-  }, [incoming, normalizedQuery, q]);
+    const monthFiltered = incoming.filter((row) => {
+      const date = String(row.shipment_date || "").slice(0, 10);
+      if (!date) return false;
+      return date.slice(0, 4) === selectedYear && Number(date.slice(5, 7)) === Number(selectedMonth);
+    });
+    if (!term) return monthFiltered;
+    return monthFiltered.filter((row) => searchText(row).includes(term) || row.normalized_yarn_key === normalizedQuery);
+  }, [incoming, normalizedQuery, q, selectedMonth, selectedYear]);
+
+  const availableYears = useMemo(
+    () => getAvailableYears({ shipmentLots: stockAnalyticsRaw?.lots || [], consumptions: stockAnalyticsRaw?.consumption || [] }),
+    [stockAnalyticsRaw],
+  );
+
+  const monthlyAnalytics = useMemo(
+    () => buildMonthlyAnalytics({
+      shipmentLots: stockAnalyticsRaw?.lots || [],
+      consumptions: stockAnalyticsRaw?.consumption || [],
+    }, Number(selectedYear)),
+    [selectedYear, stockAnalyticsRaw],
+  );
+
+  const selectedPoint = useMemo(
+    () => monthlyAnalytics.find((point) => point.month === Number(selectedMonth)) || monthlyAnalytics[0],
+    [monthlyAnalytics, selectedMonth],
+  );
 
   const totals = useMemo(() => {
     const incomingKg = filtered.reduce((sum, row) => sum + Number(row.net_weight_kg || 0), 0);
-    const certifiedKg = normalizedQuery
-      ? certifiedSummary
-          .filter((row: any) => String(row.normalized_yarn_key || "").toUpperCase() === normalizedQuery)
-          .reduce((sum: number, row: any) => sum + Number(row.remaining_stock_kg || 0), 0)
-      : certifiedSummary.reduce((sum: number, row: any) => sum + Number(row.remaining_stock_kg || 0), 0);
 
     return {
       rows: filtered.length,
       incomingKg,
-      certifiedKg,
-      futureKg: incomingKg + certifiedKg,
+      receivedKg: selectedPoint?.receivedKg || 0,
+      consumedKg: selectedPoint?.consumedKg || 0,
+      closingKg: selectedPoint?.closingKg || 0,
     };
-  }, [certifiedSummary, filtered, normalizedQuery]);
+  }, [filtered, selectedPoint]);
 
   const updateForm = (key: keyof FormState, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -197,6 +230,7 @@ export default function LiveStock() {
       resetForm();
       qc.invalidateQueries({ queryKey: ["incoming-stock"] });
       qc.invalidateQueries({ queryKey: ["dashboard-raw"] });
+      qc.invalidateQueries({ queryKey: ["live-stock-analytics"] });
       qc.invalidateQueries({ queryKey: ["global_search"] });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save incoming stock");
@@ -239,6 +273,7 @@ export default function LiveStock() {
       toast.success("Live stock deleted");
       qc.invalidateQueries({ queryKey: ["incoming-stock"] });
       qc.invalidateQueries({ queryKey: ["dashboard-raw"] });
+      qc.invalidateQueries({ queryKey: ["live-stock-analytics"] });
       qc.invalidateQueries({ queryKey: ["global_search"] });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not delete live stock");
@@ -247,11 +282,80 @@ export default function LiveStock() {
     }
   };
 
+  const bulkDeleteIncomingStock = async (pin: string) => {
+    if (!filtered.length) {
+      toast.error("No live stock rows to delete");
+      return;
+    }
+
+    setBulkDeleting(true);
+    try {
+      if (!isLocalBackend) {
+        throw new Error("Bulk delete is available only in local backend mode");
+      }
+
+      const data = await localApi<{ ok?: boolean; deletedCount?: number; error?: string }>("/api/incoming-stock/delete-all", {
+        method: "POST",
+        body: JSON.stringify({
+          pin,
+          ids: filtered.map((row) => row.id),
+        }),
+      });
+      if (!data?.ok) throw new Error(data?.error || "Could not bulk delete live stock");
+
+      if (editingId && filtered.some((row) => row.id === editingId)) resetForm();
+      toast.success(`${data.deletedCount || 0} live stock record(s) deleted`);
+      setBulkDeleteOpen(false);
+      qc.invalidateQueries({ queryKey: ["incoming-stock"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-raw"] });
+      qc.invalidateQueries({ queryKey: ["live-stock-analytics"] });
+      qc.invalidateQueries({ queryKey: ["global_search"] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not bulk delete live stock");
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       <PageHeader
         title="Live Stock"
-        subtitle="Invoice-based upcoming stock that is already bought but not yet certified by TC."
+        subtitle="Month-wise stock analysis driven by shipment dates, plus pending incoming invoice records."
+        actions={
+          <div className="flex items-center gap-2">
+            <Select value={selectedYear} onValueChange={setSelectedYear}>
+              <SelectTrigger className="w-[120px] rounded-xl">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableYears.map((year) => (
+                  <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger className="w-[140px] rounded-xl">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                {monthlyAnalytics.map((point) => (
+                  <SelectItem key={point.month} value={String(point.month)}>{point.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {isLocalBackend ? (
+              <Button
+                variant="outline"
+                className="rounded-xl text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                disabled={!filtered.length}
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                Delete All Visible
+              </Button>
+            ) : null}
+          </div>
+        }
       />
 
       <form onSubmit={submit} className="surface p-5 animate-fadeInUp">
@@ -301,9 +405,9 @@ export default function LiveStock() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
         {[
           { label: "Pending invoices", value: totals.rows },
-          { label: "Incoming stock", value: fmtKg(totals.incomingKg, 2) },
-          { label: normalizedQuery ? `${normalizedQuery} certified` : "Certified stock", value: fmtKg(totals.certifiedKg, 2) },
-          { label: "Total future stock", value: fmtKg(totals.futureKg, 2) },
+          { label: "Stock received", value: fmtKg(totals.receivedKg, 2) },
+          { label: "Stock consumed", value: fmtKg(totals.consumedKg, 2) },
+          { label: "Stock remaining", value: fmtKg(totals.closingKg, 2) },
         ].map((item, index) => (
           <div key={item.label} className="stat-card animate-fadeInUp" style={{ animationDelay: `${100 + index * 50}ms` }}>
             <div className="text-xs text-muted-foreground">{item.label}</div>
@@ -312,13 +416,44 @@ export default function LiveStock() {
         ))}
       </div>
 
+      <div className="surface overflow-hidden mt-5 animate-fadeInUp" style={{ animationDelay: "140ms" }}>
+        <div className="p-5 border-b border-border/50">
+          <h3 className="text-sm font-semibold">Month-wise stock analysis</h3>
+          <p className="text-xs text-muted-foreground mt-1">Opening, received, consumed, and closing stock for {selectedYear}, based on shipment dates.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="data-table min-w-[760px]">
+            <thead>
+              <tr>
+                <th className="text-left">Month</th>
+                <th className="text-right">Opening</th>
+                <th className="text-right">Received</th>
+                <th className="text-right">Consumed</th>
+                <th className="text-right">Closing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyAnalytics.map((point) => (
+                <tr key={point.month} className={point.month === Number(selectedMonth) ? "bg-primary/[0.04]" : ""}>
+                  <td className="font-medium">{point.label}</td>
+                  <td className="text-right tabular-nums">{fmtKg(point.openingKg, 2)}</td>
+                  <td className="text-right tabular-nums">{fmtKg(point.receivedKg, 2)}</td>
+                  <td className="text-right tabular-nums">{fmtKg(point.consumedKg, 2)}</td>
+                  <td className="text-right tabular-nums font-semibold">{fmtKg(point.closingKg, 2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="surface overflow-hidden mt-5 animate-fadeInUp" style={{ animationDelay: "160ms" }}>
         {isLoading ? (
           <div className="p-6 space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>
         ) : !filtered.length ? (
           <EmptyState
             icon={PackagePlus}
-            title={q ? "No matching live stock" : "No live stock yet"}
+            title={q ? "No matching live stock" : "No live stock yet for this month"}
             description={q ? "Try another invoice number or yarn count." : "Add invoice details as soon as material is bought."}
           />
         ) : (
@@ -394,6 +529,16 @@ export default function LiveStock() {
           </div>
         )}
       </div>
+
+      <AdminPinDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title="Delete all visible live stock?"
+        description={`This will permanently delete ${filtered.length} visible live stock record(s). Enter Nehal's admin PIN to continue.`}
+        confirmLabel={bulkDeleting ? "Deleting..." : "Delete all"}
+        busy={bulkDeleting}
+        onConfirm={bulkDeleteIncomingStock}
+      />
     </div>
   );
 }

@@ -71,6 +71,50 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     return result.rows[0];
   });
 
+  app.put("/api/:entity(suppliers|customers)/:id", { preHandler: requireUser }, async (request, reply) => {
+    const companyId = request.user!.companyId;
+    const { entity, id } = request.params as { entity: keyof typeof entityTables; id: string };
+    const meta = entityTables[entity];
+    const input = bodySchema.parse(request.body);
+    const data = Object.fromEntries(
+      Object.entries(input).filter(([key]) => meta.allowed.includes(key as any)),
+    );
+
+    const name = cleanEntityName(data[meta.nameField]);
+    if (!name) return reply.code(400).send({ error: `${meta.nameField} is required` });
+    data[meta.nameField] = name;
+
+    const duplicate = await query(
+      `select id from ${meta.table}
+       where company_id = $1
+         and lower(btrim(${meta.nameField})) = lower(btrim($2))
+         and id <> $3
+       order by created_at asc
+       limit 1`,
+      [companyId, name, id],
+    );
+    if (duplicate.rows[0]) {
+      return reply.code(400).send({ error: `${entity.slice(0, -1)} with this name already exists` });
+    }
+
+    const entries = Object.entries(data);
+    if (!entries.length) return reply.code(400).send({ error: "No fields to update" });
+
+    const values = [...entries.map(([, value]) => value), companyId, id];
+    const assignments = entries.map(([key], index) => `${key} = $${index + 1}`);
+    assignments.push(`updated_at = now()`);
+
+    const result = await query(
+      `update ${meta.table}
+       set ${assignments.join(", ")}
+       where company_id = $${entries.length + 1} and id = $${entries.length + 2}
+       returning *`,
+      values,
+    );
+    if (!result.rows[0]) return reply.code(404).send({ error: `${entity.slice(0, -1)} not found` });
+    return result.rows[0];
+  });
+
   app.delete("/api/:entity(suppliers|customers)/:id", { preHandler: requireUser }, async (request, reply) => {
     const companyId = request.user!.companyId;
     const { entity, id } = request.params as { entity: keyof typeof entityTables; id: string };

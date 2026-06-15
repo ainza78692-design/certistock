@@ -20,9 +20,20 @@ interface DatePickerProps {
 
 export function DatePicker({ value, onChange, placeholder = "Pick a date", className }: DatePickerProps) {
   const date = value ? parseISO(value) : undefined;
+  const [open, setOpen] = React.useState(false);
+
+  const setSelectedDate = (next?: Date) => {
+    if (!onChange) return;
+    if (!next) {
+      onChange("");
+      return;
+    }
+    onChange(format(next, "yyyy-MM-dd"));
+    setOpen(false);
+  };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant={"outline"}
@@ -40,13 +51,42 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", class
         <Calendar
           mode="single"
           selected={date}
-          onSelect={(d) => {
-            if (onChange && d) {
-              onChange(format(d, "yyyy-MM-dd"));
-            }
-          }}
+          onSelect={setSelectedDate}
           initialFocus
         />
+        <div className="flex items-center justify-between border-t border-border/60 p-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-lg"
+            onClick={() => setSelectedDate(new Date())}
+          >
+            Today
+          </Button>
+          <div className="flex items-center gap-2">
+            {value ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 rounded-lg text-muted-foreground"
+                onClick={() => setSelectedDate(undefined)}
+              >
+                Clear
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-lg"
+              onClick={() => setOpen(false)}
+            >
+              Close
+            </Button>
+          </div>
+        </div>
       </PopoverContent>
     </Popover>
   );

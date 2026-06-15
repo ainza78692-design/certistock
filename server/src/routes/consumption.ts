@@ -1,9 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { assertAdminDeletePin } from "../adminActions.js";
 import { requireUser } from "../auth.js";
 import { query, withTransaction } from "../db.js";
 import { renderAndStoreMassBalance } from "../massBalance.js";
 import { cleanupUnusedCustomers } from "../entityCleanup.js";
+import { buildCombinedProductName } from "../productName.js";
 
 const consumptionSchema = z.object({
   productLotId: z.string().uuid(),
@@ -32,19 +34,56 @@ const consumptionSchema = z.object({
   outwardNetWeightKg: z.coerce.number().optional().nullable(),
   outwardGrossWeightKg: z.coerce.number().optional().nullable(),
   transportDoc: z.string().optional().nullable(),
+  allowDuplicatePair: z.boolean().optional().default(false),
+});
+
+const bulkDeleteConsumptionSchema = z.object({
+  pin: z.string().trim().min(1),
+  ids: z.array(z.string().uuid()).optional().default([]),
 });
 
 const cleanEntityName = (value: string | null | undefined) =>
   String(value || "").replace(/\s+/g, " ").trim();
+const normalizeDuplicateField = (value: string | null | undefined) =>
+  String(value || "").replace(/\s+/g, " ").trim().toUpperCase();
 
 export async function registerConsumptionRoutes(app: FastifyInstance) {
   app.post("/api/consumption", { preHandler: requireUser }, async (request, reply) => {
     const user = request.user!;
     const input = consumptionSchema.parse(request.body);
+    const outwardInvoiceNo = input.outwardSale.outward_invoice_no || input.invoiceNo || null;
+    const transportDocNo = input.outwardSale.transport_doc_no || input.transportDoc || null;
+    const duplicateInvoiceNo = normalizeDuplicateField(outwardInvoiceNo);
+    const duplicateTransportDocNo = normalizeDuplicateField(transportDocNo);
+
+    if (duplicateInvoiceNo && duplicateTransportDocNo && !input.allowDuplicatePair) {
+      const existingDuplicate = await query<any>(
+        `select id, outward_invoice_no, transport_doc_no, created_at
+         from outward_sales
+         where company_id = $1
+           and upper(btrim(coalesce(outward_invoice_no, ''))) = $2
+           and upper(btrim(coalesce(transport_doc_no, ''))) = $3
+         order by created_at desc
+         limit 1`,
+        [user.companyId, duplicateInvoiceNo, duplicateTransportDocNo],
+      );
+      if (existingDuplicate.rows[0]) {
+        return reply.code(409).send({
+          ok: false,
+          error: "Consumption has already been processed for this Invoice Number and E-Way Bill Number combination. Do you want to process it again?",
+          duplicate: {
+            outward_invoice_no: existingDuplicate.rows[0].outward_invoice_no,
+            transport_doc_no: existingDuplicate.rows[0].transport_doc_no,
+            existing_outward_sale_id: existingDuplicate.rows[0].id,
+            existing_created_at: existingDuplicate.rows[0].created_at,
+          },
+        });
+      }
+    }
 
     const result = await withTransaction(async (client) => {
       const lotResult = await client.query<any>(
-        `select id, company_id, additional_info_raw, normalized_yarn_key
+        `select id, company_id, additional_info_raw, normalized_yarn_key, product_category, product_detail, material_composition
          from product_lots
          where id = $1 and company_id = $2
          for update`,
@@ -93,6 +132,11 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
         ?? input.outwardSale.outward_certified_weight_kg
         ?? input.consumedWeightKg,
       );
+      const combinedProductName = buildCombinedProductName([
+        lot.product_category,
+        lot.product_detail,
+        lot.material_composition,
+      ]);
 
       const sale = await client.query<any>(
         `insert into outward_sales(
@@ -109,12 +153,12 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
           input.outwardSale.outward_invoice_date || input.invoiceDate || input.consumptionDate || null,
           input.outwardSale.outward_tc_no || null,
           customerName,
-          input.outwardSale.product_name || lot.additional_info_raw || null,
+          combinedProductName || input.outwardSale.product_name || lot.additional_info_raw || null,
           input.outwardSale.normalized_yarn_key || lot.normalized_yarn_key || null,
           input.outwardSale.outward_net_weight_kg ?? input.outwardNetWeightKg ?? null,
           input.outwardSale.outward_gross_weight_kg ?? input.outwardGrossWeightKg ?? null,
           Number.isFinite(outwardCertified) ? outwardCertified : input.consumedWeightKg,
-          input.outwardSale.transport_doc_no || input.transportDoc || null,
+          transportDocNo,
           input.outwardSale.vehicle_no || null,
           input.outwardSale.destination || null,
           user.id,
@@ -191,5 +235,64 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
       ...payload,
       xlsx,
     };
+  });
+
+  app.post("/api/consumption/delete-all", { preHandler: requireUser }, async (request, reply) => {
+    const user = request.user!;
+    const input = bulkDeleteConsumptionSchema.parse(request.body || {});
+    assertAdminDeletePin(input.pin);
+
+    const targetEntries = await query<any>(
+      `select id
+       from consumption_entries
+       where company_id = $1
+         and (
+           cardinality($2::uuid[]) = 0
+           or id = any($2::uuid[])
+         )
+       order by consumption_date desc nulls last, created_at desc`,
+      [user.companyId, input.ids],
+    );
+
+    const targetIds = targetEntries.rows.map((row: any) => row.id);
+    if (!targetIds.length) {
+      return reply.send({ ok: true, deletedCount: 0, xlsx: { status: "ready", failedLotIds: [] } });
+    }
+
+    const reversed = await withTransaction(async (client) => {
+      const results: any[] = [];
+      for (const entryId of targetIds) {
+        const result = await client.query<any>(
+          `select reverse_consumption_local($1, $2, $3, $4) as result`,
+          [user.companyId, user.id, entryId, "Bulk delete from Consumption page"],
+        );
+        results.push(result.rows[0].result);
+      }
+      return results;
+    });
+
+    await cleanupUnusedCustomers({ query }, user.companyId);
+
+    const productLotIds = Array.from(
+      new Set(reversed.map((item: any) => item.product_lot_id).filter(Boolean)),
+    );
+
+    const failedLotIds: string[] = [];
+    for (const productLotId of productLotIds) {
+      try {
+        await renderAndStoreMassBalance(user.companyId, productLotId);
+      } catch {
+        failedLotIds.push(productLotId);
+      }
+    }
+
+    return reply.send({
+      ok: true,
+      deletedCount: reversed.length,
+      xlsx: {
+        status: failedLotIds.length ? "partial" : "ready",
+        failedLotIds,
+      },
+    });
   });
 }
