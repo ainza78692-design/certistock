@@ -2,12 +2,12 @@ const { spawnSync } = require("child_process");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const electronBuilder = path.join(root, "node_modules", ".bin", "electron-builder.cmd");
+const electronBuilder = path.join(root, "node_modules", "electron-builder", "cli.js");
 
-const result = spawnSync(electronBuilder, ["--win", "nsis"], {
+const result = spawnSync(process.execPath, [electronBuilder, "--win", "nsis"], {
   cwd: root,
   stdio: "inherit",
-  shell: true,
+  shell: false,
 });
 
 if (result.error) {
