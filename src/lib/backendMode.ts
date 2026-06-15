@@ -1,4 +1,9 @@
-export const backendMode = (import.meta.env.VITE_BACKEND_MODE || "supabase").toLowerCase();
+const defaultBackendMode =
+  typeof window !== "undefined" && "certistockDesktop" in window
+    ? "local"
+    : "supabase";
+
+export const backendMode = (import.meta.env.VITE_BACKEND_MODE || defaultBackendMode).toLowerCase();
 export const isLocalBackend = backendMode === "local";
 
 export const LOCAL_API_URL_STORAGE_KEY = "certistock.local.apiUrl";

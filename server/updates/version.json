@@ -1,9 +1,9 @@
 {
-  "version": "1.0.8",
-  "latestVersion": "1.0.8",
+  "version": "1.0.9",
+  "latestVersion": "1.0.9",
   "minimumSupportedVersion": "1.0.0",
-  "installerUrl": "http://100.91.86.65:8787/updates/CertiStock-Setup-1.0.8.exe",
-  "sha256": "19a416b3fdd40b58329ff1047f572dccc63d3f626e212d2a5a3591c276d12cbe",
+  "installerUrl": "http://100.91.86.65:8787/updates/CertiStock-Setup-1.0.9.exe",
+  "sha256": "dad1aca1ab9f6253fa430d186e3f036dc265f185714f49d06dffd07a6ad50fa4",
   "releaseNotesUrl": "",
   "mandatory": false
 }
