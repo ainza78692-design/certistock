@@ -177,12 +177,19 @@ const cleanInputTcs = (value?: string | null) => {
   return cleaned;
 };
 
-const cleanInvoiceReference = (value?: string | null) =>
-  (value || "")
+const cleanInvoiceReference = (value?: string | null) => {
+  const cleaned = (value || "")
     .replace(/\s+/g, " ")
     .replace(/^(?:Invoice References?|Invoice No\.?)\s*[:\-]?\s*/i, "")
     .replace(/\s+(?:Consignee(?:\s+name\s+and\s+address|\s+Name)?|TE-ID|Shipment No\.?|Shipment Date|Gross Shipping Weight)\b.*$/i, "")
     .trim();
+
+  const token = cleaned.match(
+    /\b[A-Z0-9][A-Z0-9/.\-]{4,}[A-Z0-9](?:\s*\(\s*\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}\s*\))?/i,
+  )?.[0];
+
+  return token || cleaned;
+};
 
 const normalizeInvoiceComparable = (value?: string | null) =>
   cleanInvoiceReference(value)
@@ -336,7 +343,7 @@ export default function ReviewExtraction() {
       if (Array.isArray(ex.shipments) && ex.shipments.length) {
         setShipments(ex.shipments.map((s) => ({
           shipment_no: s.shipment_no ?? "", shipment_date: s.shipment_date ?? "",
-          shipment_doc_no: s.shipment_doc_no ?? "", invoice_reference: s.invoice_reference ?? "",
+          shipment_doc_no: s.shipment_doc_no ?? "", invoice_reference: cleanInvoiceReference(s.invoice_reference),
           gross_shipping_weight_kg: s.gross_shipping_weight_kg?.toString() ?? "",
           consignee_name: s.consignee_name ?? "",
           consignee_address: s.consignee_address ?? "",
