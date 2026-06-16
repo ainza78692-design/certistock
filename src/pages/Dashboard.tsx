@@ -215,10 +215,10 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <FlowStat icon={PackagePlus} label="Inbound Pipeline" value={fmtKg(stats?.inboundPipelineKg, 2)} subtext="Arriving in ~30 days (Not available for sale)" delay={0} />
-          <FlowStat icon={Warehouse} label="On-Hand Inventory (PC)" value={fmtKg(stats?.onHandKg, 2)} subtext="Total certified physical stock received" tone="success" delay={60} />
-          <FlowStat icon={ShoppingCart} label="Consumed / Sold" value={fmtKg(stats?.consumedKg, 2)} subtext="Deducted from physical stock" tone="warning" delay={120} />
-          <FlowStat icon={TrendingUp} label="Net Available to Sell" value={fmtKg(stats?.netAvailableKg, 2)} subtext="On-hand inventory minus consumed stock" focus delay={180} />
+          <FlowStat icon={PackagePlus} label="Incoming Stock" value={fmtKg(stats?.inboundPipelineKg, 2)} subtext="Stock added from incoming invoices" delay={0} />
+          <FlowStat icon={Warehouse} label="Total Stock" value={fmtKg(stats?.onHandKg, 2)} subtext="Total certified stock received" tone="success" delay={60} />
+          <FlowStat icon={ShoppingCart} label="Used Stock" value={fmtKg(stats?.consumedKg, 2)} subtext="Stock consumed or sold" tone="warning" delay={120} />
+          <FlowStat icon={TrendingUp} label="Available Stock" value={fmtKg(stats?.netAvailableKg, 2)} subtext="Stock currently available" focus delay={180} />
         </div>
       )}
 
