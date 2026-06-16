@@ -75,9 +75,8 @@ export default function LiveStock() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const currentYear = new Date().getFullYear();
-  const currentMonth = new Date().getMonth() + 1;
   const [selectedYear, setSelectedYear] = useState(String(currentYear));
-  const [selectedMonth, setSelectedMonth] = useState(String(currentMonth));
+  const [selectedMonth, setSelectedMonth] = useState("all");
 
   const cid = profile?.company_id;
   const urlQuery = searchParams.get("q") || "";
@@ -107,7 +106,7 @@ export default function LiveStock() {
     enabled: !!cid,
     queryFn: async () => {
       if (isLocalBackend) {
-        return localApi<{ lots: any[]; consumption: any[] }>("/api/dashboard");
+        return localApi<{ lots: any[]; incomingStock: IncomingStockRow[]; consumption: any[] }>("/api/dashboard");
       }
 
       const [lots, consumption] = await Promise.all([
@@ -124,6 +123,7 @@ export default function LiveStock() {
           ...lot,
           shipment_date: lot.shipments?.shipment_date || null,
         })),
+        incomingStock: [],
         consumption: consumption.data || [],
       };
     },
@@ -139,17 +139,26 @@ export default function LiveStock() {
     const term = q.trim().toUpperCase();
     const monthFiltered = incoming.filter((row) => {
       const date = String(row.shipment_date || "").slice(0, 10);
-      if (!date) return false;
-      return date.slice(0, 4) === selectedYear && Number(date.slice(5, 7)) === Number(selectedMonth);
+      if (!date) return selectedMonth === "all";
+      const sameYear = date.slice(0, 4) === selectedYear;
+      if (!sameYear) return false;
+      return selectedMonth === "all" || Number(date.slice(5, 7)) === Number(selectedMonth);
     });
     if (!term) return monthFiltered;
     return monthFiltered.filter((row) => searchText(row).includes(term) || row.normalized_yarn_key === normalizedQuery);
   }, [incoming, normalizedQuery, q, selectedMonth, selectedYear]);
 
-  const availableYears = useMemo(
-    () => getAvailableYears({ shipmentLots: stockAnalyticsRaw?.lots || [], consumptions: stockAnalyticsRaw?.consumption || [] }),
-    [stockAnalyticsRaw],
-  );
+  const availableYears = useMemo(() => {
+    const years = new Set(
+      getAvailableYears({ shipmentLots: stockAnalyticsRaw?.lots || [], consumptions: stockAnalyticsRaw?.consumption || [] }),
+    );
+    incoming.forEach((row) => {
+      const year = Number(String(row.shipment_date || "").slice(0, 4));
+      if (Number.isFinite(year)) years.add(year);
+    });
+    years.add(currentYear);
+    return Array.from(years).sort((a, b) => a - b);
+  }, [currentYear, incoming, stockAnalyticsRaw]);
 
   const monthlyAnalytics = useMemo(
     () => buildMonthlyAnalytics({
@@ -160,21 +169,28 @@ export default function LiveStock() {
   );
 
   const selectedPoint = useMemo(
-    () => monthlyAnalytics.find((point) => point.month === Number(selectedMonth)) || monthlyAnalytics[0],
+    () => {
+      if (selectedMonth === "all") return null;
+      return monthlyAnalytics.find((point) => point.month === Number(selectedMonth)) || monthlyAnalytics[0];
+    },
     [monthlyAnalytics, selectedMonth],
   );
 
   const totals = useMemo(() => {
     const incomingKg = filtered.reduce((sum, row) => sum + Number(row.net_weight_kg || 0), 0);
+    const consumedKg = selectedPoint
+      ? selectedPoint.consumedKg
+      : monthlyAnalytics.reduce((sum, point) => sum + point.consumedKg, 0);
+    const certifiedRemainingKg = (stockAnalyticsRaw?.lots || [])
+      .reduce((sum: number, lot: any) => sum + Number(lot.remaining_stock_kg || 0), 0);
 
     return {
       rows: filtered.length,
       incomingKg,
-      receivedKg: selectedPoint?.receivedKg || 0,
-      consumedKg: selectedPoint?.consumedKg || 0,
-      closingKg: selectedPoint?.closingKg || 0,
+      consumedKg,
+      certifiedRemainingKg,
     };
-  }, [filtered, selectedPoint]);
+  }, [filtered, monthlyAnalytics, selectedPoint, stockAnalyticsRaw]);
 
   const updateForm = (key: keyof FormState, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -321,7 +337,7 @@ export default function LiveStock() {
     <div className="max-w-7xl mx-auto">
       <PageHeader
         title="Live Stock"
-        subtitle="Month-wise stock analysis driven by shipment dates, plus pending incoming invoice records."
+        subtitle="Pending incoming invoices and certified stock movement."
         actions={
           <div className="flex items-center gap-2">
             <Select value={selectedYear} onValueChange={setSelectedYear}>
@@ -339,6 +355,7 @@ export default function LiveStock() {
                 <SelectValue placeholder="Month" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">All months</SelectItem>
                 {monthlyAnalytics.map((point) => (
                   <SelectItem key={point.month} value={String(point.month)}>{point.label}</SelectItem>
                 ))}
@@ -405,9 +422,9 @@ export default function LiveStock() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
         {[
           { label: "Pending invoices", value: totals.rows },
-          { label: "Stock received", value: fmtKg(totals.receivedKg, 2) },
-          { label: "Stock consumed", value: fmtKg(totals.consumedKg, 2) },
-          { label: "Stock remaining", value: fmtKg(totals.closingKg, 2) },
+          { label: "Pending stock weight", value: fmtKg(totals.incomingKg, 2) },
+          { label: "Used certified stock", value: fmtKg(totals.consumedKg, 2) },
+          { label: "Available certified stock", value: fmtKg(totals.certifiedRemainingKg, 2) },
         ].map((item, index) => (
           <div key={item.label} className="stat-card animate-fadeInUp" style={{ animationDelay: `${100 + index * 50}ms` }}>
             <div className="text-xs text-muted-foreground">{item.label}</div>
@@ -416,38 +433,11 @@ export default function LiveStock() {
         ))}
       </div>
 
-      <div className="surface overflow-hidden mt-5 animate-fadeInUp" style={{ animationDelay: "140ms" }}>
-        <div className="p-5 border-b border-border/50">
-          <h3 className="text-sm font-semibold">Month-wise stock analysis</h3>
-          <p className="text-xs text-muted-foreground mt-1">Opening, received, consumed, and closing stock for {selectedYear}, based on shipment dates.</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="data-table min-w-[760px]">
-            <thead>
-              <tr>
-                <th className="text-left">Month</th>
-                <th className="text-right">Opening</th>
-                <th className="text-right">Received</th>
-                <th className="text-right">Consumed</th>
-                <th className="text-right">Closing</th>
-              </tr>
-            </thead>
-            <tbody>
-              {monthlyAnalytics.map((point) => (
-                <tr key={point.month} className={point.month === Number(selectedMonth) ? "bg-primary/[0.04]" : ""}>
-                  <td className="font-medium">{point.label}</td>
-                  <td className="text-right tabular-nums">{fmtKg(point.openingKg, 2)}</td>
-                  <td className="text-right tabular-nums">{fmtKg(point.receivedKg, 2)}</td>
-                  <td className="text-right tabular-nums">{fmtKg(point.consumedKg, 2)}</td>
-                  <td className="text-right tabular-nums font-semibold">{fmtKg(point.closingKg, 2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       <div className="surface overflow-hidden mt-5 animate-fadeInUp" style={{ animationDelay: "160ms" }}>
+        <div className="p-5 border-b border-border/50">
+          <h3 className="text-sm font-semibold">Pending incoming stock</h3>
+          <p className="text-xs text-muted-foreground mt-1">Invoices that are not yet linked to approved TC stock.</p>
+        </div>
         {isLoading ? (
           <div className="p-6 space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>
         ) : !filtered.length ? (
@@ -528,6 +518,37 @@ export default function LiveStock() {
             </table>
           </div>
         )}
+      </div>
+
+      <div className="surface overflow-hidden mt-5 animate-fadeInUp" style={{ animationDelay: "180ms" }}>
+        <div className="p-5 border-b border-border/50">
+          <h3 className="text-sm font-semibold">Month-wise certified stock</h3>
+          <p className="text-xs text-muted-foreground mt-1">Certified stock received and used for {selectedYear}, based on TC shipment dates.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="data-table min-w-[760px]">
+            <thead>
+              <tr>
+                <th className="text-left">Month</th>
+                <th className="text-right">Opening</th>
+                <th className="text-right">Received</th>
+                <th className="text-right">Used</th>
+                <th className="text-right">Closing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyAnalytics.map((point) => (
+                <tr key={point.month} className={selectedMonth !== "all" && point.month === Number(selectedMonth) ? "bg-primary/[0.04]" : ""}>
+                  <td className="font-medium">{point.label}</td>
+                  <td className="text-right tabular-nums">{fmtKg(point.openingKg, 2)}</td>
+                  <td className="text-right tabular-nums">{fmtKg(point.receivedKg, 2)}</td>
+                  <td className="text-right tabular-nums">{fmtKg(point.consumedKg, 2)}</td>
+                  <td className="text-right tabular-nums font-semibold">{fmtKg(point.closingKg, 2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <AdminPinDialog
