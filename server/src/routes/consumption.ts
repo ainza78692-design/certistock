@@ -206,38 +206,7 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, ...result, xlsx });
   });
 
-  app.delete("/api/consumption/:id", { preHandler: requireUser }, async (request) => {
-    const user = request.user!;
-    const { id } = request.params as { id: string };
-    const reason = (request.query as any)?.reason || "Deleted from local API";
-    const result = await query<any>(
-      `select reverse_consumption_local($1, $2, $3, $4) as result`,
-      [user.companyId, user.id, id, reason],
-    );
-    await cleanupUnusedCustomers({ query }, user.companyId);
-    const payload = result.rows[0].result;
-
-    let xlsx = { status: "ready", error: null as string | null, workbook: null as any };
-    try {
-      const workbook = await renderAndStoreMassBalance(user.companyId, payload.product_lot_id);
-      xlsx = { status: "ready", error: null, workbook };
-    } catch (error) {
-      xlsx = {
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-        workbook: null,
-      };
-    }
-
-    return {
-      ok: true,
-      productLotId: payload.product_lot_id,
-      ...payload,
-      xlsx,
-    };
-  });
-
-  app.post("/api/consumption/delete-all", { preHandler: requireUser }, async (request, reply) => {
+  const bulkDeleteConsumption = async (request: any, reply: any) => {
     const user = request.user!;
     const input = bulkDeleteConsumptionSchema.parse(request.body || {});
     assertAdminDeletePin(input.pin);
@@ -294,5 +263,39 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
         failedLotIds,
       },
     });
+  };
+
+  app.post("/api/consumption/delete-all", { preHandler: requireUser }, bulkDeleteConsumption);
+  app.post("/api/consumption/bulk-delete", { preHandler: requireUser }, bulkDeleteConsumption);
+
+  app.delete("/api/consumption/:id", { preHandler: requireUser }, async (request) => {
+    const user = request.user!;
+    const { id } = request.params as { id: string };
+    const reason = (request.query as any)?.reason || "Deleted from local API";
+    const result = await query<any>(
+      `select reverse_consumption_local($1, $2, $3, $4) as result`,
+      [user.companyId, user.id, id, reason],
+    );
+    await cleanupUnusedCustomers({ query }, user.companyId);
+    const payload = result.rows[0].result;
+
+    let xlsx = { status: "ready", error: null as string | null, workbook: null as any };
+    try {
+      const workbook = await renderAndStoreMassBalance(user.companyId, payload.product_lot_id);
+      xlsx = { status: "ready", error: null, workbook };
+    } catch (error) {
+      xlsx = {
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+        workbook: null,
+      };
+    }
+
+    return {
+      ok: true,
+      productLotId: payload.product_lot_id,
+      ...payload,
+      xlsx,
+    };
   });
 }

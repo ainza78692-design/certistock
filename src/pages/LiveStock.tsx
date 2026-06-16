@@ -29,7 +29,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { fmtDate, fmtKg, normalizeProductKey } from "@/lib/format";
-import { buildMonthlyAnalytics, getAvailableYears } from "@/lib/monthAnalytics";
+import { getAvailableYears } from "@/lib/monthAnalytics";
 
 type IncomingStockRow = {
   id: string;
@@ -38,6 +38,18 @@ type IncomingStockRow = {
   normalized_yarn_key: string | null;
   net_weight_kg: number | string;
   shipment_date: string;
+  created_at?: string | null;
+};
+
+type CertifiedStockRow = {
+  id?: string;
+  normalized_yarn_key?: string | null;
+  certified_weight_kg?: number | string | null;
+  opening_stock_kg?: number | string | null;
+  consumed_stock_kg?: number | string | null;
+  remaining_stock_kg?: number | string | null;
+  shipment_date?: string | null;
+  status?: string | null;
   created_at?: string | null;
 };
 
@@ -75,7 +87,7 @@ export default function LiveStock() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const currentYear = new Date().getFullYear();
-  const [selectedYear, setSelectedYear] = useState(String(currentYear));
+  const [selectedYear, setSelectedYear] = useState("all");
   const [selectedMonth, setSelectedMonth] = useState("all");
 
   const cid = profile?.company_id;
@@ -106,7 +118,7 @@ export default function LiveStock() {
     enabled: !!cid,
     queryFn: async () => {
       if (isLocalBackend) {
-        return localApi<{ lots: any[]; incomingStock: IncomingStockRow[]; consumption: any[] }>("/api/dashboard");
+        return localApi<{ lots: CertifiedStockRow[]; incomingStock: IncomingStockRow[]; consumption: any[] }>("/api/dashboard");
       }
 
       const [lots, consumption] = await Promise.all([
@@ -135,17 +147,19 @@ export default function LiveStock() {
     return normalizeProductKey(trimmed) || trimmed.toUpperCase();
   }, [q]);
 
+  const matchesSelectedPeriod = (dateValue?: string | null) => {
+    const date = String(dateValue || "").slice(0, 10);
+    if (!date) return selectedYear === "all" && selectedMonth === "all";
+    const yearMatches = selectedYear === "all" || date.slice(0, 4) === selectedYear;
+    const monthMatches = selectedMonth === "all" || Number(date.slice(5, 7)) === Number(selectedMonth);
+    return yearMatches && monthMatches;
+  };
+
   const filtered = useMemo(() => {
     const term = q.trim().toUpperCase();
-    const monthFiltered = incoming.filter((row) => {
-      const date = String(row.shipment_date || "").slice(0, 10);
-      if (!date) return selectedMonth === "all";
-      const sameYear = date.slice(0, 4) === selectedYear;
-      if (!sameYear) return false;
-      return selectedMonth === "all" || Number(date.slice(5, 7)) === Number(selectedMonth);
-    });
-    if (!term) return monthFiltered;
-    return monthFiltered.filter((row) => searchText(row).includes(term) || row.normalized_yarn_key === normalizedQuery);
+    const periodFiltered = incoming.filter((row) => matchesSelectedPeriod(row.shipment_date));
+    if (!term) return periodFiltered;
+    return periodFiltered.filter((row) => searchText(row).includes(term) || row.normalized_yarn_key === normalizedQuery);
   }, [incoming, normalizedQuery, q, selectedMonth, selectedYear]);
 
   const availableYears = useMemo(() => {
@@ -160,37 +174,25 @@ export default function LiveStock() {
     return Array.from(years).sort((a, b) => a - b);
   }, [currentYear, incoming, stockAnalyticsRaw]);
 
-  const monthlyAnalytics = useMemo(
-    () => buildMonthlyAnalytics({
-      shipmentLots: stockAnalyticsRaw?.lots || [],
-      consumptions: stockAnalyticsRaw?.consumption || [],
-    }, Number(selectedYear)),
-    [selectedYear, stockAnalyticsRaw],
-  );
-
-  const selectedPoint = useMemo(
-    () => {
-      if (selectedMonth === "all") return null;
-      return monthlyAnalytics.find((point) => point.month === Number(selectedMonth)) || monthlyAnalytics[0];
-    },
-    [monthlyAnalytics, selectedMonth],
+  const certifiedLots = useMemo(
+    () => (stockAnalyticsRaw?.lots || []).filter((lot) => matchesSelectedPeriod(lot.shipment_date)),
+    [selectedMonth, selectedYear, stockAnalyticsRaw],
   );
 
   const totals = useMemo(() => {
     const incomingKg = filtered.reduce((sum, row) => sum + Number(row.net_weight_kg || 0), 0);
-    const consumedKg = selectedPoint
-      ? selectedPoint.consumedKg
-      : monthlyAnalytics.reduce((sum, point) => sum + point.consumedKg, 0);
-    const certifiedRemainingKg = (stockAnalyticsRaw?.lots || [])
+    const usedCertifiedKg = certifiedLots
+      .reduce((sum: number, lot: any) => sum + Number(lot.consumed_stock_kg || 0), 0);
+    const certifiedRemainingKg = certifiedLots
       .reduce((sum: number, lot: any) => sum + Number(lot.remaining_stock_kg || 0), 0);
 
     return {
       rows: filtered.length,
       incomingKg,
-      consumedKg,
+      usedCertifiedKg,
       certifiedRemainingKg,
     };
-  }, [filtered, monthlyAnalytics, selectedPoint, stockAnalyticsRaw]);
+  }, [certifiedLots, filtered]);
 
   const updateForm = (key: keyof FormState, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -337,7 +339,7 @@ export default function LiveStock() {
     <div className="max-w-7xl mx-auto">
       <PageHeader
         title="Live Stock"
-        subtitle="Pending incoming invoices and certified stock movement."
+        subtitle="Pending incoming invoices and certified stock currently in the system."
         actions={
           <div className="flex items-center gap-2">
             <Select value={selectedYear} onValueChange={setSelectedYear}>
@@ -345,6 +347,7 @@ export default function LiveStock() {
                 <SelectValue placeholder="Year" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">All years</SelectItem>
                 {availableYears.map((year) => (
                   <SelectItem key={year} value={String(year)}>{year}</SelectItem>
                 ))}
@@ -356,9 +359,18 @@ export default function LiveStock() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All months</SelectItem>
-                {monthlyAnalytics.map((point) => (
-                  <SelectItem key={point.month} value={String(point.month)}>{point.label}</SelectItem>
-                ))}
+                <SelectItem value="1">Jan</SelectItem>
+                <SelectItem value="2">Feb</SelectItem>
+                <SelectItem value="3">Mar</SelectItem>
+                <SelectItem value="4">Apr</SelectItem>
+                <SelectItem value="5">May</SelectItem>
+                <SelectItem value="6">Jun</SelectItem>
+                <SelectItem value="7">Jul</SelectItem>
+                <SelectItem value="8">Aug</SelectItem>
+                <SelectItem value="9">Sep</SelectItem>
+                <SelectItem value="10">Oct</SelectItem>
+                <SelectItem value="11">Nov</SelectItem>
+                <SelectItem value="12">Dec</SelectItem>
               </SelectContent>
             </Select>
             {isLocalBackend ? (
@@ -423,8 +435,8 @@ export default function LiveStock() {
         {[
           { label: "Pending invoices", value: totals.rows },
           { label: "Pending stock weight", value: fmtKg(totals.incomingKg, 2) },
-          { label: "Used certified stock", value: fmtKg(totals.consumedKg, 2) },
           { label: "Available certified stock", value: fmtKg(totals.certifiedRemainingKg, 2) },
+          { label: "Used certified stock", value: fmtKg(totals.usedCertifiedKg, 2) },
         ].map((item, index) => (
           <div key={item.label} className="stat-card animate-fadeInUp" style={{ animationDelay: `${100 + index * 50}ms` }}>
             <div className="text-xs text-muted-foreground">{item.label}</div>
@@ -522,33 +534,41 @@ export default function LiveStock() {
 
       <div className="surface overflow-hidden mt-5 animate-fadeInUp" style={{ animationDelay: "180ms" }}>
         <div className="p-5 border-b border-border/50">
-          <h3 className="text-sm font-semibold">Month-wise certified stock</h3>
-          <p className="text-xs text-muted-foreground mt-1">Certified stock received and used for {selectedYear}, based on TC shipment dates.</p>
+          <h3 className="text-sm font-semibold">Certified available stock</h3>
+          <p className="text-xs text-muted-foreground mt-1">Approved TC stock lots with current available balance.</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="data-table min-w-[760px]">
-            <thead>
-              <tr>
-                <th className="text-left">Month</th>
-                <th className="text-right">Opening</th>
-                <th className="text-right">Received</th>
-                <th className="text-right">Used</th>
-                <th className="text-right">Closing</th>
-              </tr>
-            </thead>
-            <tbody>
-              {monthlyAnalytics.map((point) => (
-                <tr key={point.month} className={selectedMonth !== "all" && point.month === Number(selectedMonth) ? "bg-primary/[0.04]" : ""}>
-                  <td className="font-medium">{point.label}</td>
-                  <td className="text-right tabular-nums">{fmtKg(point.openingKg, 2)}</td>
-                  <td className="text-right tabular-nums">{fmtKg(point.receivedKg, 2)}</td>
-                  <td className="text-right tabular-nums">{fmtKg(point.consumedKg, 2)}</td>
-                  <td className="text-right tabular-nums font-semibold">{fmtKg(point.closingKg, 2)}</td>
+        {!certifiedLots.length ? (
+          <EmptyState
+            icon={PackagePlus}
+            title="No certified stock in this filter"
+            description="Approved TC stock lots will appear here after certificate approval."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="data-table min-w-[760px]">
+              <thead>
+                <tr>
+                  <th className="text-left">Product</th>
+                  <th className="text-left">Ship date</th>
+                  <th className="text-right">Certified</th>
+                  <th className="text-right">Used</th>
+                  <th className="text-right">Available</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {certifiedLots.map((lot, index) => (
+                  <tr key={lot.id || `${lot.normalized_yarn_key || "lot"}-${index}`}>
+                    <td className="font-medium whitespace-nowrap">{lot.normalized_yarn_key || "Unmapped"}</td>
+                    <td className="whitespace-nowrap text-muted-foreground">{fmtDate(lot.shipment_date)}</td>
+                    <td className="text-right tabular-nums">{fmtKg(Number(lot.certified_weight_kg || lot.opening_stock_kg || 0), 2)}</td>
+                    <td className="text-right tabular-nums">{fmtKg(Number(lot.consumed_stock_kg || 0), 2)}</td>
+                    <td className="text-right tabular-nums font-semibold">{fmtKg(Number(lot.remaining_stock_kg || 0), 2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <AdminPinDialog
