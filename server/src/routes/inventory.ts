@@ -1,9 +1,15 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { assertAdminDeletePin } from "../adminActions.js";
 import { requireUser } from "../auth.js";
 import { query, withTransaction } from "../db.js";
 import { cleanupUnusedSuppliers } from "../entityCleanup.js";
 
 const toNumber = (value: unknown) => (value == null ? null : Number(value));
+const bulkDeleteStockLotsSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1),
+  pin: z.string().trim().min(1),
+});
 
 export async function registerInventoryRoutes(app: FastifyInstance) {
   app.get("/api/dashboard", { preHandler: requireUser }, async (request) => {
@@ -334,13 +340,11 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
 
   app.delete("/api/stock-lots", { preHandler: requireUser }, async (request, reply) => {
     const companyId = request.user!.companyId;
-    const { ids } = request.body as { ids: string[] };
-
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return reply.code(400).send({ error: "No ids provided" });
-    }
+    const { ids, pin } = bulkDeleteStockLotsSchema.parse(request.body || {});
+    assertAdminDeletePin(pin);
 
     let deletedCount = 0;
+    let blockedCount = 0;
     
     await withTransaction(async (client) => {
       // Find lots that actually belong to this company and have NO consumption
@@ -355,6 +359,7 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
       );
       
       const safeIds = safeLotsResult.rows.map(r => r.id);
+      blockedCount = ids.length - safeIds.length;
       if (safeIds.length === 0) return;
 
       await client.query(
@@ -370,7 +375,7 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
       deletedCount = deleteResult.rowCount || 0;
     });
 
-    return { ok: true, deletedCount };
+    return { ok: true, deletedCount, blockedCount };
   });
 
   app.get("/api/consumption", { preHandler: requireUser }, async (request) => {

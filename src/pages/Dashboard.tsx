@@ -10,7 +10,7 @@ import { isLocalBackend } from "@/lib/backendMode";
 import { localApi } from "@/lib/localApi";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/contexts/AuthContext";
-import { Package, FileText, ShoppingCart, AlertTriangle, ArrowRight, Boxes, TrendingUp, TrendingDown, PackagePlus } from "lucide-react";
+import { Package, FileText, ShoppingCart, AlertTriangle, ArrowRight, Boxes, TrendingUp, TrendingDown, PackagePlus, Warehouse } from "lucide-react";
 import { fmtKg } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,6 +41,27 @@ const Stat = ({ icon: Icon, label, value, change, tone = "default", delay = 0 }:
             <span className="text-muted-foreground font-normal">vs prior month</span>
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+const FlowStat = ({ icon: Icon, label, value, subtext, focus = false, tone = "default", delay = 0 }: any) => {
+  const t = toneStyles[tone] || toneStyles.default;
+  return (
+    <div
+      className={`stat-card animate-fadeInUp ${focus ? "border-primary/35 bg-primary/[0.04] shadow-sm" : ""}`}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className="text-xs font-medium text-muted-foreground tracking-wide">{label}</span>
+          <div className={`mt-3 font-bold tracking-tight ${focus ? "text-3xl text-primary" : "text-2xl"}`}>{value}</div>
+          <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{subtext}</p>
+        </div>
+        <div className={`h-9 w-9 rounded-xl ${focus ? "bg-primary text-primary-foreground" : t.icon} flex items-center justify-center shrink-0`}>
+          <Icon className="h-4 w-4" />
+        </div>
       </div>
     </div>
   );
@@ -142,6 +163,10 @@ export default function Dashboard() {
       active: normalizedLots.filter((lot: any) => lot.status === "active").length,
       lowStock: normalizedLots.filter((lot: any) => Number(lot.remaining_stock_kg) > 0 && Number(lot.remaining_stock_kg) < 100).length,
       pending: rawData.pending,
+      inboundPipelineKg: (rawData.incomingStock || []).reduce((sum: number, item: any) => sum + Number(item.net_weight_kg || 0), 0),
+      onHandKg: normalizedLots.reduce((sum: number, lot: any) => sum + Number(lot.certified_weight_kg || lot.opening_stock_kg || 0), 0),
+      consumedKg: normalizedLots.reduce((sum: number, lot: any) => sum + Number(lot.consumed_stock_kg || 0), 0),
+      netAvailableKg: normalizedLots.reduce((sum: number, lot: any) => sum + Number(lot.remaining_stock_kg || 0), 0),
       monthlyChart: monthlyAnalytics.map((point) => ({
         month: point.label,
         receivedKg: Number(point.receivedKg.toFixed(2)),
@@ -190,10 +215,10 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Stat icon={Boxes} label="Opening stock" value={fmtKg(stats?.selectedPoint?.openingKg, 2)} change={stats?.openingChange} delay={0} />
-          <Stat icon={Package} label="Stock received" value={fmtKg(stats?.selectedPoint?.receivedKg, 2)} change={stats?.receivedChange} tone="success" delay={60} />
-          <Stat icon={ShoppingCart} label="Stock consumed" value={fmtKg(stats?.selectedPoint?.consumedKg, 2)} change={stats?.consumedChange} tone="warning" delay={120} />
-          <Stat icon={TrendingUp} label="Closing stock" value={fmtKg(stats?.selectedPoint?.closingKg, 2)} change={stats?.closingChange} delay={180} />
+          <FlowStat icon={PackagePlus} label="Inbound Pipeline" value={fmtKg(stats?.inboundPipelineKg, 2)} subtext="Arriving in ~30 days (Not available for sale)" delay={0} />
+          <FlowStat icon={Warehouse} label="On-Hand Inventory (PC)" value={fmtKg(stats?.onHandKg, 2)} subtext="Total certified physical stock received" tone="success" delay={60} />
+          <FlowStat icon={ShoppingCart} label="Consumed / Sold" value={fmtKg(stats?.consumedKg, 2)} subtext="Deducted from physical stock" tone="warning" delay={120} />
+          <FlowStat icon={TrendingUp} label="Net Available to Sell" value={fmtKg(stats?.netAvailableKg, 2)} subtext="On-hand inventory minus consumed stock" focus delay={180} />
         </div>
       )}
 

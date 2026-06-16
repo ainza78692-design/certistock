@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { exportToXlsx } from "@/lib/exportUtils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePreset, getDateRange, matchesDateRange } from "@/lib/dateFilters";
+import AdminPinDialog from "@/components/AdminPinDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -261,7 +262,7 @@ export default function StockLots() {
   const safeToDelete = selectedLots.filter((l: StockLotRow) => Number(l.consumed_stock_kg || 0) === 0);
   const consumedLotsCount = selectedLots.length - safeToDelete.length;
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = async (pin: string) => {
     if (!profile?.company_id || safeToDelete.length === 0) return;
     setIsBulkDeleting(true);
 
@@ -269,7 +270,7 @@ export default function StockLots() {
       if (isLocalBackend) {
         await localApi("/api/stock-lots", { 
           method: "DELETE",
-          body: JSON.stringify({ ids: safeToDelete.map(l => l.id) })
+          body: JSON.stringify({ ids: safeToDelete.map(l => l.id), pin })
         });
         toast.success(`Deleted ${safeToDelete.length} stock lots`);
         queryClient.invalidateQueries({ queryKey: ["lots", profile.company_id] });
@@ -320,42 +321,19 @@ export default function StockLots() {
         actions={
           <div className="flex items-center gap-2">
             {selectedIds.size > 0 && (
-              <AlertDialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" className="rounded-xl gap-2 border-border/60 hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive transition-all duration-300">
-                    <Trash2 className="h-4 w-4" />Delete Selected ({selectedIds.size})
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="rounded-2xl">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Selected Lots</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      You are about to delete <strong>{safeToDelete.length}</strong> empty stock lots.
-                      {consumedLotsCount > 0 && (
-                        <span className="block mt-2 text-warning font-medium">
-                          {consumedLotsCount} consumed lot(s) will be skipped and protected.
-                        </span>
-                      )}
-                      {safeToDelete.length === 0 && (
-                        <span className="block mt-2 text-destructive font-medium">
-                          You haven't selected any lots that can be safely deleted.
-                        </span>
-                      )}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="rounded-xl" disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={(e) => { e.preventDefault(); handleBulkDelete(); }}
-                      disabled={safeToDelete.length === 0 || isBulkDeleting}
-                      className="rounded-xl bg-destructive hover:bg-destructive/90"
-                    >
-                      {isBulkDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                      Delete {safeToDelete.length} Lots
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (safeToDelete.length === 0) {
+                    toast.error("You haven't selected any empty stock lots that can be deleted.");
+                    return;
+                  }
+                  setShowBulkDialog(true);
+                }}
+                className="rounded-xl gap-2 border-border/60 hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive transition-all duration-300"
+              >
+                <Trash2 className="h-4 w-4" />Delete Selected ({selectedIds.size})
+              </Button>
             )}
             <Button variant="outline" onClick={exportExcel} className="rounded-xl gap-2 border-border/60 hover:border-primary/25 hover:bg-primary/[0.02] transition-all duration-300">
               <Package className="h-4 w-4" />Export Excel
@@ -517,6 +495,16 @@ export default function StockLots() {
           </div>
         )}
       </div>
+
+      <AdminPinDialog
+        open={showBulkDialog}
+        onOpenChange={setShowBulkDialog}
+        title="Delete selected stock lots?"
+        description={`This will delete ${safeToDelete.length} selected empty stock lot(s). ${consumedLotsCount > 0 ? `${consumedLotsCount} consumed lot(s) will be skipped and protected. ` : ""}Enter Nehal's admin PIN to continue.`}
+        confirmLabel={isBulkDeleting ? "Deleting..." : `Delete ${safeToDelete.length} lots`}
+        busy={isBulkDeleting}
+        onConfirm={handleBulkDelete}
+      />
     </div>
   );
 }

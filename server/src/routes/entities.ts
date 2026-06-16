@@ -27,123 +27,126 @@ const bodySchema = z.record(z.any());
 const cleanEntityName = (value: unknown) => String(value || "").replace(/\s+/g, " ").trim();
 
 export async function registerEntityRoutes(app: FastifyInstance) {
-  app.get("/api/:entity(suppliers|customers)", { preHandler: requireUser }, async (request) => {
-    const companyId = request.user!.companyId;
-    const { entity } = request.params as { entity: keyof typeof entityTables };
-    const meta = entityTables[entity];
-    const result = await query(
-      `select * from ${meta.table} where company_id = $1 order by created_at desc`,
-      [companyId],
-    );
-    return result.rows;
-  });
+  const registerEntity = (entity: keyof typeof entityTables) => {
+    app.get(`/api/${entity}`, { preHandler: requireUser }, async (request) => {
+      const companyId = request.user!.companyId;
+      const meta = entityTables[entity];
+      const result = await query(
+        `select * from ${meta.table} where company_id = $1 order by created_at desc`,
+        [companyId],
+      );
+      return result.rows;
+    });
 
-  app.post("/api/:entity(suppliers|customers)", { preHandler: requireUser }, async (request, reply) => {
-    const companyId = request.user!.companyId;
-    const { entity } = request.params as { entity: keyof typeof entityTables };
-    const meta = entityTables[entity];
-    const input = bodySchema.parse(request.body);
-    const data = Object.fromEntries(
-      Object.entries(input).filter(([key]) => meta.allowed.includes(key as any)),
-    );
-
-    const name = cleanEntityName(data[meta.nameField]);
-    if (!name) return reply.code(400).send({ error: `${meta.nameField} is required` });
-    data[meta.nameField] = name;
-
-    const existing = await query(
-      `select * from ${meta.table}
-       where company_id = $1 and lower(btrim(${meta.nameField})) = lower(btrim($2))
-       order by created_at asc
-       limit 1`,
-      [companyId, name],
-    );
-    if (existing.rows[0]) return existing.rows[0];
-
-    const columns = ["company_id", ...Object.keys(data)];
-    const values = [companyId, ...Object.values(data)];
-    const placeholders = values.map((_, index) => `$${index + 1}`).join(", ");
-
-    const result = await query(
-      `insert into ${meta.table}(${columns.join(", ")}) values (${placeholders}) returning *`,
-      values,
-    );
-    return result.rows[0];
-  });
-
-  app.put("/api/:entity(suppliers|customers)/:id", { preHandler: requireUser }, async (request, reply) => {
-    const companyId = request.user!.companyId;
-    const { entity, id } = request.params as { entity: keyof typeof entityTables; id: string };
-    const meta = entityTables[entity];
-    const input = bodySchema.parse(request.body);
-    const data = Object.fromEntries(
-      Object.entries(input).filter(([key]) => meta.allowed.includes(key as any)),
-    );
-
-    const name = cleanEntityName(data[meta.nameField]);
-    if (!name) return reply.code(400).send({ error: `${meta.nameField} is required` });
-    data[meta.nameField] = name;
-
-    const duplicate = await query(
-      `select id from ${meta.table}
-       where company_id = $1
-         and lower(btrim(${meta.nameField})) = lower(btrim($2))
-         and id <> $3
-       order by created_at asc
-       limit 1`,
-      [companyId, name, id],
-    );
-    if (duplicate.rows[0]) {
-      return reply.code(400).send({ error: `${entity.slice(0, -1)} with this name already exists` });
-    }
-
-    const entries = Object.entries(data);
-    if (!entries.length) return reply.code(400).send({ error: "No fields to update" });
-
-    const values = [...entries.map(([, value]) => value), companyId, id];
-    const assignments = entries.map(([key], index) => `${key} = $${index + 1}`);
-    assignments.push(`updated_at = now()`);
-
-    const result = await query(
-      `update ${meta.table}
-       set ${assignments.join(", ")}
-       where company_id = $${entries.length + 1} and id = $${entries.length + 2}
-       returning *`,
-      values,
-    );
-    if (!result.rows[0]) return reply.code(404).send({ error: `${entity.slice(0, -1)} not found` });
-    return result.rows[0];
-  });
-
-  app.delete("/api/:entity(suppliers|customers)/:id", { preHandler: requireUser }, async (request, reply) => {
-    const companyId = request.user!.companyId;
-    const { entity, id } = request.params as { entity: keyof typeof entityTables; id: string };
-    const meta = entityTables[entity];
-
-    const usage = entity === "suppliers"
-      ? await query(
-        `select count(*)::int as count
-         from transaction_certificates
-         where company_id = $1 and supplier_id = $2`,
-        [companyId, id],
-      )
-      : await query(
-        `select count(*)::int as count
-         from outward_sales
-         where company_id = $1 and customer_id = $2`,
-        [companyId, id],
+    app.post(`/api/${entity}`, { preHandler: requireUser }, async (request, reply) => {
+      const companyId = request.user!.companyId;
+      const meta = entityTables[entity];
+      const input = bodySchema.parse(request.body);
+      const data = Object.fromEntries(
+        Object.entries(input).filter(([key]) => meta.allowed.includes(key as any)),
       );
 
-    if ((usage.rows[0] as any)?.count > 0) {
-      const label = entity === "suppliers" ? "certificates" : "outward sales";
-      return reply.code(400).send({ error: `Cannot delete this ${entity.slice(0, -1)} because it is still used by ${label}.` });
-    }
+      const name = cleanEntityName(data[meta.nameField]);
+      if (!name) return reply.code(400).send({ error: `${meta.nameField} is required` });
+      data[meta.nameField] = name;
 
-    const result = await query(
-      `delete from ${meta.table} where company_id = $1 and id = $2 returning id`,
-      [companyId, id],
-    );
-    if (!result.rows[0]) return reply.code(404).send({ error: `${entity.slice(0, -1)} not found` });
-    return { ok: true };
-  });
+      const existing = await query(
+        `select * from ${meta.table}
+         where company_id = $1 and lower(btrim(${meta.nameField})) = lower(btrim($2))
+         order by created_at asc
+         limit 1`,
+        [companyId, name],
+      );
+      if (existing.rows[0]) return existing.rows[0];
+
+      const columns = ["company_id", ...Object.keys(data)];
+      const values = [companyId, ...Object.values(data)];
+      const placeholders = values.map((_, index) => `$${index + 1}`).join(", ");
+
+      const result = await query(
+        `insert into ${meta.table}(${columns.join(", ")}) values (${placeholders}) returning *`,
+        values,
+      );
+      return result.rows[0];
+    });
+
+    app.put(`/api/${entity}/:id`, { preHandler: requireUser }, async (request, reply) => {
+      const companyId = request.user!.companyId;
+      const { id } = request.params as { id: string };
+      const meta = entityTables[entity];
+      const input = bodySchema.parse(request.body);
+      const data = Object.fromEntries(
+        Object.entries(input).filter(([key]) => meta.allowed.includes(key as any)),
+      );
+
+      const name = cleanEntityName(data[meta.nameField]);
+      if (!name) return reply.code(400).send({ error: `${meta.nameField} is required` });
+      data[meta.nameField] = name;
+
+      const duplicate = await query(
+        `select id from ${meta.table}
+         where company_id = $1
+           and lower(btrim(${meta.nameField})) = lower(btrim($2))
+           and id <> $3
+         order by created_at asc
+         limit 1`,
+        [companyId, name, id],
+      );
+      if (duplicate.rows[0]) {
+        return reply.code(400).send({ error: `${entity.slice(0, -1)} with this name already exists` });
+      }
+
+      const entries = Object.entries(data);
+      if (!entries.length) return reply.code(400).send({ error: "No fields to update" });
+
+      const values = [...entries.map(([, value]) => value), companyId, id];
+      const assignments = entries.map(([key], index) => `${key} = $${index + 1}`);
+      assignments.push(`updated_at = now()`);
+
+      const result = await query(
+        `update ${meta.table}
+         set ${assignments.join(", ")}
+         where company_id = $${entries.length + 1} and id = $${entries.length + 2}
+         returning *`,
+        values,
+      );
+      if (!result.rows[0]) return reply.code(404).send({ error: `${entity.slice(0, -1)} not found` });
+      return result.rows[0];
+    });
+
+    app.delete(`/api/${entity}/:id`, { preHandler: requireUser }, async (request, reply) => {
+      const companyId = request.user!.companyId;
+      const { id } = request.params as { id: string };
+      const meta = entityTables[entity];
+
+      const usage = entity === "suppliers"
+        ? await query(
+          `select count(*)::int as count
+           from transaction_certificates
+           where company_id = $1 and supplier_id = $2`,
+          [companyId, id],
+        )
+        : await query(
+          `select count(*)::int as count
+           from outward_sales
+           where company_id = $1 and customer_id = $2`,
+          [companyId, id],
+        );
+
+      if ((usage.rows[0] as any)?.count > 0) {
+        const label = entity === "suppliers" ? "certificates" : "outward sales";
+        return reply.code(400).send({ error: `Cannot delete this ${entity.slice(0, -1)} because it is still used by ${label}.` });
+      }
+
+      const result = await query(
+        `delete from ${meta.table} where company_id = $1 and id = $2 returning id`,
+        [companyId, id],
+      );
+      if (!result.rows[0]) return reply.code(404).send({ error: `${entity.slice(0, -1)} not found` });
+      return { ok: true };
+    });
+  };
+
+  registerEntity("suppliers");
+  registerEntity("customers");
 }

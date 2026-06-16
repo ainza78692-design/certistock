@@ -288,9 +288,15 @@ export function useBulkConsumption() {
     setProcessedCount(0);
 
     const toProcess = sourceLines.filter(l => l.status === "matched" && l.lotId);
+    const batchDuplicateCounts = toProcess.reduce((counts, line) => {
+      if (!line.duplicateKey) return counts;
+      counts.set(line.duplicateKey, (counts.get(line.duplicateKey) || 0) + 1);
+      return counts;
+    }, new Map<string, number>());
 
     for (let i = 0; i < toProcess.length; i++) {
       const line = toProcess[i];
+      const allowPairForLine = allowDuplicatePair || (!!line.duplicateKey && (batchDuplicateCounts.get(line.duplicateKey) || 0) > 1);
       try {
         if (isLocalBackend) {
           const data = await localApi<{ ok?: boolean; error?: string }>("/api/consumption", {
@@ -313,7 +319,7 @@ export function useBulkConsumption() {
                 product_name: line.sourceRow.composition || null,
                 normalized_yarn_key: line.sourceRow.normalizedYarnKey || null,
               },
-              allowDuplicatePair,
+              allowDuplicatePair: allowPairForLine,
             }),
           });
           if (!data?.ok) throw new Error(data?.error || "Failed");
@@ -342,7 +348,7 @@ export function useBulkConsumption() {
               product_name: line.sourceRow.composition || null,
               normalized_yarn_key: line.sourceRow.normalizedYarnKey || null,
             },
-            allowDuplicatePair,
+            allowDuplicatePair: allowPairForLine,
           },
         });
         if (error) throw error;
@@ -360,7 +366,7 @@ export function useBulkConsumption() {
   }, []);
 
   const processAll = useCallback(async () => {
-    const duplicateLines = lines.filter((l) => l.status === "duplicate" && l.duplicateKey);
+    const duplicateLines = lines.filter((l) => l.status === "duplicate" && l.duplicateKey && l.baseStatus === "matched" && l.lotId);
     if (duplicateLines.length) {
       setPendingDuplicateConfirmation(true);
       return;
@@ -383,6 +389,10 @@ export function useBulkConsumption() {
     setPendingDuplicateConfirmation(false);
   }, []);
 
+  const isProcessable = (line: ConsumptionLine) =>
+    (line.status === "matched" && !!line.lotId)
+    || (line.status === "duplicate" && line.baseStatus === "matched" && !!line.lotId);
+
   const stats = {
     total: lines.length,
     matched: lines.filter(l => l.status === "matched").length,
@@ -393,10 +403,10 @@ export function useBulkConsumption() {
     skipped: lines.filter(l => l.status === "skipped").length,
     done: lines.filter(l => l.status === "done").length,
     error: lines.filter(l => l.status === "error").length,
-    totalWeight: lines.filter(l => l.status === "matched").reduce((s, l) => s + l.consumedWeightKg, 0),
+    totalWeight: lines.filter(isProcessable).reduce((s, l) => s + l.consumedWeightKg, 0),
   };
 
-  const processableCount = lines.filter(l => l.status === "matched" && l.lotId).length;
+  const processableCount = lines.filter(isProcessable).length;
 
   const reset = useCallback(() => {
     setParsed(null);
