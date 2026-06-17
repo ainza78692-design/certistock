@@ -140,13 +140,39 @@ export default function Consumption() {
         throw new Error("Bulk delete is available only in local backend mode");
       }
 
-      const data = await localApi<any>("/api/consumption/delete-all", {
-        method: "POST",
-        body: JSON.stringify({
-          pin,
-          ids: filtered.map((entry: any) => entry.id),
-        }),
-      });
+      let data: any;
+      try {
+        data = await localApi<any>("/api/consumption/delete-all", {
+          method: "POST",
+          body: JSON.stringify({
+            pin,
+            ids: filtered.map((entry: any) => entry.id),
+          }),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/not found/i.test(message)) throw error;
+
+        let deletedCount = 0;
+        const failed: string[] = [];
+        for (const entry of filtered) {
+          try {
+            await localApi<any>(`/api/consumption/${entry.id}?reason=${encodeURIComponent("Bulk delete from Consumption page")}`, {
+              method: "DELETE",
+            });
+            deletedCount += 1;
+          } catch {
+            failed.push(entry.id);
+          }
+        }
+
+        data = {
+          ok: failed.length === 0,
+          deletedCount,
+          xlsx: { status: failed.length ? "partial" : "ready" },
+          error: failed.length ? `${failed.length} consumption record(s) could not be deleted` : null,
+        };
+      }
       if (!data?.ok) throw new Error(data?.error || "Could not bulk delete consumption");
 
       if (data.xlsx?.status === "ready") {

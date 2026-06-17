@@ -14,7 +14,8 @@ import { Package, FileText, ShoppingCart, AlertTriangle, ArrowRight, Boxes, Tren
 import { fmtKg } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { buildMonthlyAnalytics, getAvailableYears } from "@/lib/monthAnalytics";
+import { MonthPicker } from "@/components/ui/month-picker";
+import { buildMonthlyAnalytics } from "@/lib/monthAnalytics";
 
 const toneStyles: Record<string, { icon: string }> = {
   default: { icon: "bg-primary/10 text-primary" },
@@ -86,8 +87,7 @@ export default function Dashboard() {
   const cid = profile?.company_id;
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
-  const [selectedYear, setSelectedYear] = useState(String(currentYear));
-  const [selectedMonth, setSelectedMonth] = useState(String(currentMonth));
+  const [selectedDate, setSelectedDate] = useState(new Date(currentYear, currentMonth - 1, 1));
 
   const { data: rawData, isLoading } = useQuery({
     queryKey: ["dashboard-raw", cid],
@@ -131,13 +131,9 @@ export default function Dashboard() {
     }))
   ), [rawData]);
 
-  const availableYears = useMemo(
-    () => getAvailableYears({ shipmentLots: normalizedLots, consumptions: rawData?.consumption || [] }),
-    [normalizedLots, rawData],
-  );
-
-  const selectedYearNumber = Number(selectedYear);
-  const selectedMonthNumber = Number(selectedMonth);
+  const selectedYearNumber = selectedDate.getFullYear();
+  const selectedMonthNumber = selectedDate.getMonth() + 1;
+  const selectedYear = String(selectedYearNumber);
 
   const monthlyAnalytics = useMemo(
     () => buildMonthlyAnalytics({ shipmentLots: normalizedLots, consumptions: rawData?.consumption || [] }, selectedYearNumber),
@@ -183,26 +179,7 @@ export default function Dashboard() {
         subtitle="Month-wise certified stock movement driven by shipment dates."
         actions={
           <div className="flex items-center gap-2">
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="w-[120px] rounded-xl">
-                <SelectValue placeholder="Year" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableYears.map((year) => (
-                  <SelectItem key={year} value={String(year)}>{year}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-[140px] rounded-xl">
-                <SelectValue placeholder="Month" />
-              </SelectTrigger>
-              <SelectContent>
-                {monthlyAnalytics.map((point) => (
-                  <SelectItem key={point.month} value={String(point.month)}>{point.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <MonthPicker date={selectedDate} onDateChange={setSelectedDate} />
           </div>
         }
       />

@@ -344,7 +344,12 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     # DATA ROWS  (row 6 onward)
     # ══════════════════════════════════════════════════════════════════════════
     supplier    = payload.supplier.get("supplier_name") or ""
-    product_raw = payload.lot.get("additional_info_raw") or payload.lot.get("normalized_yarn_key") or ""
+    product_raw = (
+        payload.lot.get("product_name")
+        or payload.lot.get("additional_info_raw")
+        or payload.lot.get("normalized_yarn_key")
+        or ""
+    )
     tc_number   = payload.tc.get("tc_number") or ""
     cert_wt     = number_value(payload.tc.get("certified_weight_kg"))
     net_wt      = number_value(payload.tc.get("net_shipping_weight_kg"))

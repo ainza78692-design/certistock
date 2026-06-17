@@ -832,6 +832,11 @@ export default function ReviewExtraction() {
                       <Field label="Units" type="number" value={p.number_of_units} onChange={v => updateProduct(i, { number_of_units: v })} />
                       <Field label="Unit type" value={p.unit_type} onChange={v => updateProduct(i, { unit_type: v })} />
                       <Field label="Net weight (kg)" type="number" value={p.net_shipping_weight_kg} onChange={v => updateProduct(i, { net_shipping_weight_kg: v })} />
+                      <div className="col-span-2">
+                        <Field label="Product Category" value={p.product_category} onChange={v => updateProduct(i, { product_category: v })} />
+                      </div>
+                      <Field label="Product Detail" value={p.product_detail} onChange={v => updateProduct(i, { product_detail: v })} />
+                      <Field label="Material Composition" value={p.material_composition} onChange={v => updateProduct(i, { material_composition: v })} />
                       <div className="col-span-2 space-y-1.5 mt-2">
                         <Label className="text-xs font-semibold">Product key mapping</Label>
                         <Select value={p.is_custom_product ? "__CREATE_NEW__" : (p.normalized_yarn_key || "")} onValueChange={value => updateProduct(i, { normalized_yarn_key: value })}>

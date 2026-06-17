@@ -53,6 +53,11 @@ export async function registerHealthRoutes(app: FastifyInstance) {
       ocrWorkerUrl: config.ocrWorkerUrl,
       ocrWorkerRequired: config.ocrWorkerRequired,
       ocrWorker,
+      features: {
+        customerSupplierEditRoutes: true,
+        consumptionBulkDeleteRoute: true,
+        consumptionBulkDeleteFallbackSupported: true,
+      },
     });
   });
 }
