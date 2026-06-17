@@ -344,8 +344,20 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     # DATA ROWS  (row 6 onward)
     # ══════════════════════════════════════════════════════════════════════════
     supplier    = payload.supplier.get("supplier_name") or ""
+    cat = payload.lot.get("product_category")
+    det = payload.lot.get("product_detail")
+    mat = payload.lot.get("material_composition")
+    
+    parts = []
+    if cat: parts.append(f"Product Category: {cat}")
+    if det: parts.append(f"Product Detail: {det}")
+    if mat: parts.append(f"Material composition: {mat}")
+    
+    combined = "\n".join(parts)
+    
     product_raw = (
-        payload.lot.get("product_name")
+        combined
+        or payload.lot.get("product_name")
         or payload.lot.get("additional_info_raw")
         or payload.lot.get("normalized_yarn_key")
         or ""
