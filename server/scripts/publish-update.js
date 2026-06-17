@@ -48,7 +48,7 @@ async function publishUpdate() {
     version: version,
     latestVersion: version,
     minimumSupportedVersion: "1.0.0",
-    installerUrl: `http://100.91.86.65:8787/updates/${targetExeName}`,
+    installerUrl: `http://100.65.85.125:8787/updates/${targetExeName}`,
     sha256: sha256,
     releaseNotesUrl: "",
     mandatory: false
