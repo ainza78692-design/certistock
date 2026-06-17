@@ -14,8 +14,9 @@ import { Package, FileText, ShoppingCart, AlertTriangle, ArrowRight, Boxes, Tren
 import { fmtKg } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MonthPicker } from "@/components/ui/month-picker";
-import { buildMonthlyAnalytics } from "@/lib/monthAnalytics";
+import { buildMonthlyAnalytics, getAvailableYears } from "@/lib/monthAnalytics";
+
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const toneStyles: Record<string, { icon: string }> = {
   default: { icon: "bg-primary/10 text-primary" },
@@ -87,7 +88,10 @@ export default function Dashboard() {
   const cid = profile?.company_id;
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
-  const [selectedDate, setSelectedDate] = useState(new Date(currentYear, currentMonth - 1, 1));
+
+  // Filter state: year + month (0 = "All year")
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+  const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth); // 0 = all
 
   const { data: rawData, isLoading } = useQuery({
     queryKey: ["dashboard-raw", cid],
@@ -131,24 +135,51 @@ export default function Dashboard() {
     }))
   ), [rawData]);
 
-  const selectedYearNumber = selectedDate.getFullYear();
-  const selectedMonthNumber = selectedDate.getMonth() + 1;
-  const selectedYear = String(selectedYearNumber);
+  // Derive available years from actual data
+  const availableYears = useMemo(() => {
+    const years = getAvailableYears({
+      shipmentLots: normalizedLots,
+      consumptions: rawData?.consumption || [],
+    });
+    // Always include the current year
+    if (!years.includes(currentYear)) years.push(currentYear);
+    return years.sort((a, b) => b - a); // descending
+  }, [normalizedLots, rawData, currentYear]);
 
   const monthlyAnalytics = useMemo(
-    () => buildMonthlyAnalytics({ shipmentLots: normalizedLots, consumptions: rawData?.consumption || [] }, selectedYearNumber),
-    [normalizedLots, rawData, selectedYearNumber],
+    () => buildMonthlyAnalytics({ shipmentLots: normalizedLots, consumptions: rawData?.consumption || [] }, selectedYear),
+    [normalizedLots, rawData, selectedYear],
   );
 
   const stats = useMemo(() => {
     if (!rawData) return null;
 
-    const selectedPoint = monthlyAnalytics.find((point) => point.month === selectedMonthNumber) || monthlyAnalytics[0];
-    const previousPoint = monthlyAnalytics.find((point) => point.month === Math.max(selectedMonthNumber - 1, 1));
+    // KPI values derived from monthlyAnalytics (filtered by selectedYear)
+    const yearTotalReceived = monthlyAnalytics.reduce((sum, p) => sum + p.receivedKg, 0);
+    const yearTotalConsumed = monthlyAnalytics.reduce((sum, p) => sum + p.consumedKg, 0);
+
+    // Incoming stock pipeline filtered by selected year
+    const inboundPipelineKg = (rawData.incomingStock || [])
+      .filter((item: any) => {
+        const itemYear = item.shipment_date ? Number(item.shipment_date.slice(0, 4)) : null;
+        return itemYear === selectedYear;
+      })
+      .reduce((sum: number, item: any) => sum + Number(item.net_weight_kg || 0), 0);
+
+    // Closing balance: use selected month or last month of year that has data
+    const effectiveMonth = selectedMonth > 0 ? selectedMonth : 12;
+    const selectedPoint = monthlyAnalytics.find((p) => p.month === effectiveMonth) || monthlyAnalytics[11];
+    const previousPoint = monthlyAnalytics.find((p) => p.month === Math.max(effectiveMonth - 1, 1));
     const pctChange = (current: number, previous: number) => {
       if (!previous) return null;
       return ((current - previous) / previous) * 100;
     };
+
+    // If "All year" is selected, KPIs show year totals
+    // If specific month, KPIs show that month's data
+    const displayReceived = selectedMonth === 0 ? yearTotalReceived : selectedPoint.receivedKg;
+    const displayConsumed = selectedMonth === 0 ? yearTotalConsumed : selectedPoint.consumedKg;
+    const displayClosing = selectedPoint.closingKg;
 
     return {
       selectedPoint,
@@ -159,10 +190,10 @@ export default function Dashboard() {
       active: normalizedLots.filter((lot: any) => lot.status === "active").length,
       lowStock: normalizedLots.filter((lot: any) => Number(lot.remaining_stock_kg) > 0 && Number(lot.remaining_stock_kg) < 100).length,
       pending: rawData.pending,
-      inboundPipelineKg: (rawData.incomingStock || []).reduce((sum: number, item: any) => sum + Number(item.net_weight_kg || 0), 0),
-      onHandKg: normalizedLots.reduce((sum: number, lot: any) => sum + Number(lot.certified_weight_kg || lot.opening_stock_kg || 0), 0),
-      consumedKg: normalizedLots.reduce((sum: number, lot: any) => sum + Number(lot.consumed_stock_kg || 0), 0),
-      netAvailableKg: normalizedLots.reduce((sum: number, lot: any) => sum + Number(lot.remaining_stock_kg || 0), 0),
+      inboundPipelineKg,
+      displayReceived,
+      displayConsumed,
+      displayClosing,
       monthlyChart: monthlyAnalytics.map((point) => ({
         month: point.label,
         receivedKg: Number(point.receivedKg.toFixed(2)),
@@ -170,16 +201,48 @@ export default function Dashboard() {
         closingKg: Number(point.closingKg.toFixed(2)),
       })),
     };
-  }, [rawData, monthlyAnalytics, normalizedLots, selectedMonthNumber]);
+  }, [rawData, monthlyAnalytics, normalizedLots, selectedMonth, selectedYear]);
+
+  // Check if chart has any non-zero data
+  const hasMovementData = stats?.monthlyChart?.some((p) => p.receivedKg > 0 || p.consumedKg > 0) ?? false;
+  const hasClosingData = stats?.monthlyChart?.some((p) => p.closingKg > 0) ?? false;
+
+  // Period label for display
+  const periodLabel = selectedMonth === 0
+    ? `${selectedYear} full year`
+    : `${MONTH_LABELS[selectedMonth - 1]} ${selectedYear}`;
 
   return (
     <div className="max-w-7xl mx-auto">
       <PageHeader
         title={`Welcome back${profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}`}
-        subtitle="Month-wise certified stock movement driven by shipment dates."
+        subtitle={`Certified stock movement driven by shipment dates — ${periodLabel}`}
         actions={
           <div className="flex items-center gap-2">
-            <MonthPicker date={selectedDate} onDateChange={setSelectedDate} />
+            {/* Year selector */}
+            <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+              <SelectTrigger className="w-[100px] rounded-xl border-border/60 hover:border-primary/30 transition-colors shadow-sm text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                {availableYears.map((y) => (
+                  <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Month selector */}
+            <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
+              <SelectTrigger className="w-[130px] rounded-xl border-border/60 hover:border-primary/30 transition-colors shadow-sm text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="0">All year</SelectItem>
+                {MONTH_LABELS.map((label, i) => (
+                  <SelectItem key={i + 1} value={String(i + 1)}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         }
       />
@@ -192,10 +255,37 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <FlowStat icon={PackagePlus} label="Incoming Stock" value={fmtKg(stats?.inboundPipelineKg, 2)} subtext="Stock added from incoming invoices" delay={0} />
-          <FlowStat icon={Warehouse} label="Total Stock" value={fmtKg(stats?.onHandKg, 2)} subtext="Total certified stock received" tone="success" delay={60} />
-          <FlowStat icon={ShoppingCart} label="Used Stock" value={fmtKg(stats?.consumedKg, 2)} subtext="Stock consumed or sold" tone="warning" delay={120} />
-          <FlowStat icon={TrendingUp} label="Available Stock" value={fmtKg(stats?.netAvailableKg, 2)} subtext="Stock currently available" focus delay={180} />
+          <FlowStat
+            icon={PackagePlus}
+            label="Incoming Stock"
+            value={fmtKg(stats?.inboundPipelineKg, 2)}
+            subtext={`Unmatched invoices in ${selectedYear}`}
+            delay={0}
+          />
+          <FlowStat
+            icon={Warehouse}
+            label="Total Received"
+            value={fmtKg(stats?.displayReceived, 2)}
+            subtext={selectedMonth === 0 ? `Certified stock received in ${selectedYear}` : `Received in ${periodLabel}`}
+            tone="success"
+            delay={60}
+          />
+          <FlowStat
+            icon={ShoppingCart}
+            label="Used Stock"
+            value={fmtKg(stats?.displayConsumed, 2)}
+            subtext={selectedMonth === 0 ? `Consumed in ${selectedYear}` : `Consumed in ${periodLabel}`}
+            tone="warning"
+            delay={120}
+          />
+          <FlowStat
+            icon={TrendingUp}
+            label="Closing Balance"
+            value={fmtKg(stats?.displayClosing, 2)}
+            subtext={`Stock available end of ${periodLabel}`}
+            focus
+            delay={180}
+          />
         </div>
       )}
 
@@ -211,9 +301,9 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="h-64">
-            {stats?.monthlyChart?.length ? (
+            {hasMovementData ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.monthlyChart}>
+                <BarChart data={stats!.monthlyChart}>
                   <defs>
                     <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.85} />
@@ -229,8 +319,10 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                No stock data for this year.
+              <div className="h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                <Boxes className="h-8 w-8 opacity-30" />
+                <span className="text-sm">No shipment data for {selectedYear}.</span>
+                <span className="text-xs opacity-70">Try selecting a different year.</span>
               </div>
             )}
           </div>
@@ -247,9 +339,9 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="h-64">
-            {stats?.monthlyChart?.length ? (
+            {hasClosingData ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={stats.monthlyChart}>
+                <AreaChart data={stats!.monthlyChart}>
                   <defs>
                     <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.2} />
@@ -264,8 +356,10 @@ export default function Dashboard() {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                No consumption data for this year.
+              <div className="h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                <TrendingUp className="h-8 w-8 opacity-30" />
+                <span className="text-sm">No closing balance data for {selectedYear}.</span>
+                <span className="text-xs opacity-70">Try selecting a different year.</span>
               </div>
             )}
           </div>
