@@ -68,7 +68,7 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
        from transaction_certificates tc
        left join suppliers s on s.id = tc.supplier_id
        where tc.company_id = $1
-       order by tc.created_at desc`,
+       order by tc.issue_date desc nulls last, tc.created_at desc`,
       [companyId],
     );
 
@@ -194,7 +194,7 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
        left join suppliers s on s.id = tc.supplier_id
        left join shipments sh on sh.id = l.shipment_id
        where l.company_id = $1
-       order by l.created_at desc`,
+       order by sh.shipment_date desc nulls last, l.created_at desc`,
       [companyId],
     );
 
@@ -396,7 +396,7 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
        left join transaction_certificates tc on tc.id = l.transaction_certificate_id
        left join outward_sales os on os.id = ce.outward_sale_id
        where ce.company_id = $1
-       order by ce.created_at desc
+       order by ce.consumption_date desc nulls last, ce.created_at desc
        limit 500`,
       [companyId],
     );

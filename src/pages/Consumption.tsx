@@ -58,7 +58,9 @@ export default function Consumption() {
     const range = getDateRange(datePreset, customFrom, customTo);
     const search = q.toUpperCase().trim();
     return (data || []).filter((entry: any) => {
-      if (!matchesDateRange(entry.consumption_date, range)) return false;
+      // Filter by the source lot's shipment date (when material arrived)
+      const shipmentDate = entry.product_lots?.shipments?.shipment_date;
+      if (!matchesDateRange(shipmentDate, range)) return false;
       if (!search) return true;
       return (
         (entry.product_lots?.normalized_yarn_key || "").toUpperCase().includes(search) ||
@@ -249,7 +251,7 @@ export default function Consumption() {
           <Select value={datePreset} onValueChange={(value) => setDatePreset(value as DatePreset)}>
             <SelectTrigger className="rounded-xl border-0 bg-muted/40"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All dates</SelectItem>
+              <SelectItem value="all">All shipment dates</SelectItem>
               <SelectItem value="last7">Last 7 days</SelectItem>
               <SelectItem value="thisMonth">This month</SelectItem>
               <SelectItem value="lastMonth">Last month</SelectItem>
