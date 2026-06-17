@@ -26,6 +26,15 @@ const bulkDeleteSchema = z.object({
   ids: z.array(z.string().uuid()).optional().default([]),
 });
 
+const bulkImportSchema = z.object({
+  rows: z.array(z.object({
+    invoice_no: z.string().trim().min(1),
+    yarn_count: z.string().trim().min(1),
+    net_weight_kg: z.coerce.number().positive(),
+    shipment_date: z.string().trim().min(1),
+  })).min(1),
+});
+
 export async function registerIncomingStockRoutes(app: FastifyInstance) {
   app.get("/api/incoming-stock", { preHandler: requireUser }, async (request) => {
     const companyId = request.user!.companyId;
@@ -192,5 +201,48 @@ export async function registerIncomingStockRoutes(app: FastifyInstance) {
     });
 
     return { ok: true, ...result };
+  });
+
+  app.post("/api/incoming-stock/bulk", { preHandler: requireUser }, async (request, reply) => {
+    const user = request.user!;
+    const { rows } = bulkImportSchema.parse(request.body);
+
+    const result = await withTransaction(async (client) => {
+      let inserted = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const row of rows) {
+        const normalizedKey = normalizedIncomingYarnKey(row.yarn_count);
+        try {
+          const duplicate = await client.query(
+            `select id from incoming_stock
+             where company_id = $1
+               and matched_tc_id is null
+               and lower(btrim(invoice_no)) = lower(btrim($2))
+             limit 1`,
+            [user.companyId, row.invoice_no],
+          );
+          if (duplicate.rows[0]) {
+            skipped++;
+            continue;
+          }
+          await client.query(
+            `insert into incoming_stock(
+               company_id, invoice_no, yarn_count, normalized_yarn_key,
+               net_weight_kg, shipment_date, created_by
+             ) values ($1,$2,$3,$4,$5,$6,$7)`,
+            [user.companyId, row.invoice_no, row.yarn_count, normalizedKey,
+             row.net_weight_kg, row.shipment_date, user.id],
+          );
+          inserted++;
+        } catch (err: any) {
+          errors.push(`${row.invoice_no}: ${err.message}`);
+        }
+      }
+      return { inserted, skipped, errors };
+    });
+
+    return reply.code(201).send({ ok: true, ...result });
   });
 }

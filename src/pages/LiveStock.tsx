@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Edit2, Loader2, PackagePlus, Search, Trash2, X } from "lucide-react";
+import { Edit2, FileSpreadsheet, Loader2, PackagePlus, Search, Trash2, Upload, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isLocalBackend } from "@/lib/backendMode";
 import { localApi } from "@/lib/localApi";
@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import AdminPinDialog from "@/components/AdminPinDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -86,6 +87,10 @@ export default function LiveStock() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [xlsxOpen, setXlsxOpen] = useState(false);
+  const [xlsxRows, setXlsxRows] = useState<{ invoice_no: string; net_weight_kg: number; yarn_count: string; shipment_date: string }[]>([]);
+  const [xlsxImporting, setXlsxImporting] = useState(false);
+  const xlsxInputRef = useRef<HTMLInputElement>(null);
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState("all");
   const [selectedMonth, setSelectedMonth] = useState("all");
@@ -335,6 +340,98 @@ export default function LiveStock() {
     }
   };
 
+  const parseExcelFile = async (file: File) => {
+    try {
+      const xlsx = await import("xlsx");
+      const buffer = await file.arrayBuffer();
+      const wb = xlsx.read(buffer, { type: "array", cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw: any[][] = xlsx.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+      // Find the header row (contains "Invoice" and "Shipment Date")
+      let headerIdx = -1;
+      for (let i = 0; i < Math.min(raw.length, 10); i++) {
+        const row = raw[i];
+        if (!row) continue;
+        const joined = row.map((c: any) => String(c || "").trim().toLowerCase()).join(" ");
+        if (joined.includes("invoice") && joined.includes("shipment")) {
+          headerIdx = i;
+          break;
+        }
+      }
+      if (headerIdx === -1) {
+        toast.error("Could not find header row with 'Invoice' and 'Shipment Date' columns");
+        return;
+      }
+
+      const headers = raw[headerIdx].map((h: any) => String(h || "").trim().toLowerCase());
+      const invoiceCol = headers.findIndex((h: string) => h.includes("invoice"));
+      const weightCol = headers.findIndex((h: string) => h.includes("weight") || h.includes("net"));
+      const yarnCol = headers.findIndex((h: string) => h.includes("yarn") || h.includes("count"));
+      const dateCol = headers.findIndex((h: string) => h.includes("shipment") || h.includes("date"));
+
+      if (invoiceCol < 0 || weightCol < 0 || yarnCol < 0 || dateCol < 0) {
+        toast.error("Missing required columns: Invoice, Net Weight, Yarn Count, Shipment Date");
+        return;
+      }
+
+      const parsed: { invoice_no: string; net_weight_kg: number; yarn_count: string; shipment_date: string }[] = [];
+      for (let i = headerIdx + 1; i < raw.length; i++) {
+        const row = raw[i];
+        if (!row || row.every((c: any) => c == null || c === "")) continue;
+        const invoice = String(row[invoiceCol] || "").trim();
+        const weight = Number(row[weightCol]);
+        const yarn = String(row[yarnCol] || "").trim();
+        const rawDate = row[dateCol];
+        if (!invoice || !yarn || !weight || weight <= 0) continue;
+
+        let shipmentDate = "";
+        if (rawDate instanceof Date) {
+          shipmentDate = rawDate.toISOString().slice(0, 10);
+        } else if (typeof rawDate === "number") {
+          // Excel serial date
+          const d = xlsx.SSF.parse_date_code(rawDate);
+          shipmentDate = `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+        } else if (rawDate) {
+          const d = new Date(rawDate);
+          if (!isNaN(d.getTime())) shipmentDate = d.toISOString().slice(0, 10);
+        }
+        if (!shipmentDate) continue;
+        parsed.push({ invoice_no: invoice, net_weight_kg: weight, yarn_count: yarn, shipment_date: shipmentDate });
+      }
+
+      if (!parsed.length) {
+        toast.error("No valid rows found in Excel file");
+        return;
+      }
+      setXlsxRows(parsed);
+      setXlsxOpen(true);
+    } catch (err) {
+      toast.error("Failed to read Excel file: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const importXlsxRows = async () => {
+    if (!xlsxRows.length) return;
+    setXlsxImporting(true);
+    try {
+      const data = await localApi<{ ok: boolean; inserted: number; skipped: number; errors: string[] }>(
+        "/api/incoming-stock/bulk",
+        { method: "POST", body: JSON.stringify({ rows: xlsxRows }) },
+      );
+      toast.success(`✅ ${data.inserted} added, ${data.skipped} skipped (duplicates)${data.errors.length ? `, ${data.errors.length} errors` : ""}`);
+      setXlsxOpen(false);
+      setXlsxRows([]);
+      qc.invalidateQueries({ queryKey: ["incoming-stock"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-raw"] });
+      qc.invalidateQueries({ queryKey: ["live-stock-analytics"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setXlsxImporting(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       <PageHeader
@@ -374,14 +471,35 @@ export default function LiveStock() {
               </SelectContent>
             </Select>
             {isLocalBackend ? (
-              <Button
-                variant="outline"
-                className="rounded-xl text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                disabled={!filtered.length}
-                onClick={() => setBulkDeleteOpen(true)}
-              >
-                Delete All Visible
-              </Button>
+              <>
+                <input
+                  ref={xlsxInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) parseExcelFile(file);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  className="rounded-xl gap-2"
+                  onClick={() => xlsxInputRef.current?.click()}
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Upload Excel
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-xl text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                  disabled={!filtered.length}
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  Delete All Visible
+                </Button>
+              </>
             ) : null}
           </div>
         }
@@ -580,6 +698,55 @@ export default function LiveStock() {
         busy={bulkDeleting}
         onConfirm={bulkDeleteIncomingStock}
       />
+
+      {/* Excel Import Preview Modal */}
+      <Dialog open={xlsxOpen} onOpenChange={(v) => { if (!xlsxImporting) { setXlsxOpen(v); if (!v) setXlsxRows([]); } }}>
+        <DialogContent className="rounded-2xl max-w-3xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-emerald-500" />
+              Import Live Stock from Excel
+            </DialogTitle>
+            <DialogDescription>
+              {xlsxRows.length} row(s) detected. Duplicate invoice numbers will be skipped automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-auto flex-1 rounded-xl border border-border/50">
+            <table className="data-table min-w-[560px] text-sm">
+              <thead>
+                <tr>
+                  <th className="text-left">#</th>
+                  <th className="text-left">Invoice No</th>
+                  <th className="text-left">Yarn Count</th>
+                  <th className="text-right">Net Wt (kg)</th>
+                  <th className="text-left">Shipment Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {xlsxRows.map((row, i) => (
+                  <tr key={i}>
+                    <td className="text-muted-foreground">{i + 1}</td>
+                    <td className="font-mono text-xs">{row.invoice_no}</td>
+                    <td>{row.yarn_count}</td>
+                    <td className="text-right tabular-nums">{row.net_weight_kg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="text-muted-foreground">{row.shipment_date}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => { setXlsxOpen(false); setXlsxRows([]); }} disabled={xlsxImporting}>
+              Cancel
+            </Button>
+            <Button className="rounded-xl gap-2" onClick={importXlsxRows} disabled={xlsxImporting}>
+              {xlsxImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              Import {xlsxRows.length} rows
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+
   );
 }

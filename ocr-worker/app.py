@@ -371,11 +371,8 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
 
     # ── Build product display text ────────────────────────────────────────────
     if cat or det or mat:
-        # TC has structured category/detail/material fields
-        parts = []
-        if cat: parts.append(f"Product Category: {cat}")
-        if det: parts.append(f"Product Detail: {det}")
-        if mat: parts.append(f"Material composition: {mat}")
+        # TC has structured category/detail/material fields — show values only (no labels)
+        parts = [p for p in [cat, det, mat] if p]
         product_raw = "\n".join(parts)
     else:
         # Fall back to yarn_count_raw or cleaned additional_info_raw
