@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import os
+import re
 from datetime import date
 from importlib.util import find_spec
 from typing import Any
@@ -347,21 +348,52 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     cat = payload.lot.get("product_category")
     det = payload.lot.get("product_detail")
     mat = payload.lot.get("material_composition")
-    
-    parts = []
-    if cat: parts.append(f"Product Category: {cat}")
-    if det: parts.append(f"Product Detail: {det}")
-    if mat: parts.append(f"Material composition: {mat}")
-    
-    combined = "\n".join(parts)
-    
-    product_raw = (
-        combined
-        or payload.lot.get("product_name")
-        or payload.lot.get("additional_info_raw")
-        or payload.lot.get("normalized_yarn_key")
-        or ""
+
+    # ── Helper: extract Lot No from additional_info_raw / yarn_count_raw ──────
+    def extract_lot_no(text: str | None) -> str:
+        if not text:
+            return ""
+        m = re.search(r"LOT\s*NO\.?\s*[:\-]?\s*([A-Za-z0-9\-]+)", text, re.IGNORECASE)
+        return m.group(1).strip() if m else ""
+
+    # ── Helper: strip "Other info: LOT NO.: ..." trailing noise ──────────────
+    def clean_additional_info(text: str | None) -> str:
+        if not text:
+            return ""
+        # Remove " Other info: LOT NO.: XXXX" and everything after
+        cleaned = re.sub(
+            r"\s*Other\s+info\s*[:\-]?.*$",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip()
+        return cleaned
+
+    # ── Build product display text ────────────────────────────────────────────
+    if cat or det or mat:
+        # TC has structured category/detail/material fields
+        parts = []
+        if cat: parts.append(f"Product Category: {cat}")
+        if det: parts.append(f"Product Detail: {det}")
+        if mat: parts.append(f"Material composition: {mat}")
+        product_raw = "\n".join(parts)
+    else:
+        # Fall back to yarn_count_raw or cleaned additional_info_raw
+        yarn_raw     = payload.lot.get("yarn_count_raw") or ""
+        add_info_raw = payload.lot.get("additional_info_raw") or ""
+        product_raw  = (
+            clean_additional_info(yarn_raw)
+            or clean_additional_info(add_info_raw)
+            or payload.lot.get("normalized_yarn_key")
+            or ""
+        )
+
+    # ── Extract Lot No from yarn_count_raw or additional_info_raw ────────────
+    lot_no = (
+        extract_lot_no(payload.lot.get("yarn_count_raw"))
+        or extract_lot_no(payload.lot.get("additional_info_raw"))
     )
+
     tc_number   = payload.tc.get("tc_number") or ""
     cert_wt     = number_value(payload.tc.get("certified_weight_kg"))
     net_wt      = number_value(payload.tc.get("net_shipping_weight_kg"))
@@ -399,7 +431,7 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
             sc(r,  5, cert_wt,     F_D11, align=A_CC, num_format="#,##0.00")
             sc(r,  6, net_wt,      F_D11, align=A_CC, num_format="#,##0.00")
             sc(r,  7, gross_wt,    F_D11, align=A_CC, num_format="#,##0.00")
-            # H (col 8) = Lot No – reference leaves this blank in data rows
+            sc(r,  8, lot_no,      F_D10, align=A_CCS)  # H = Lot No/Batch No
 
         # I – open/running stock
         if idx == 0:
