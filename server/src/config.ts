@@ -30,7 +30,7 @@ export const config = {
   adminDeletePin: process.env.ADMIN_DELETE_PIN ?? "nehal@123",
   databaseUrl: required("DATABASE_URL", isProduction ? undefined : "postgres://certistock:certistock@127.0.0.1:5432/certistock_utf8"),
   jwtSecret: required("JWT_SECRET", isProduction ? undefined : "change-this-local-development-secret"),
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "3650d",
   fileStorageRoot: path.resolve(process.env.FILE_STORAGE_ROOT ?? (isProduction ? "/srv/certistock/data/files" : "data/files")),
   ocrWorkerUrl: process.env.OCR_WORKER_URL ?? "http://127.0.0.1:8001",
   ocrWorkerApiKey: process.env.OCR_WORKER_API_KEY ?? "",
