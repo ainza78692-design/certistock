@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,44 @@ import { getLocalApiUrl, isLocalBackend } from "@/lib/backendMode";
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+// Priority-ordered list of update server base URLs.
+// The app tries each in sequence and uses the first one that responds.
+const UPDATE_SERVER_PRIORITY = [
+  "http://192.168.101.8:8787",
+  "http://100.65.85.125:8787",
+] as const;
+
+/**
+ * Tries each candidate manifest URL in priority order and returns the first
+ * successful result. Falls back to the user-configured API URL last.
+ */
+async function checkForUpdatesWithFallback(
+  desktop: NonNullable<typeof window.certistockDesktop>,
+  userConfiguredApiUrl: string,
+): Promise<{
+  currentVersion: string;
+  updateAvailable: boolean;
+  mandatory: boolean;
+  manifest: CertiStockUpdateManifest;
+} | null> {
+  // Build the full candidate list: fixed IPs first, user URL last.
+  const candidates = [
+    ...UPDATE_SERVER_PRIORITY.map((base) => `${base}/updates/version.json`),
+    `${userConfiguredApiUrl}/updates/version.json`,
+  ];
+
+  for (const url of candidates) {
+    try {
+      const result = await desktop.checkForUpdates(url);
+      return result;
+    } catch {
+      // This candidate failed — try the next one.
+    }
+  }
+  // All candidates failed.
+  return null;
+}
+
 export default function DesktopUpdatePrompt() {
   const desktop = typeof window !== "undefined" ? window.certistockDesktop : undefined;
   const [open, setOpen] = useState(false);
@@ -28,17 +66,12 @@ export default function DesktopUpdatePrompt() {
     manifest: CertiStockUpdateManifest;
   } | null>(null);
 
-  const manifestUrl = useMemo(() => {
-    if (!desktop || !isLocalBackend) return null;
-    return `${getLocalApiUrl()}/updates/version.json`;
-  }, [desktop]);
-
   const check = async (silent = true) => {
-    if (!desktop || !manifestUrl || checking) return;
+    if (!desktop || !isLocalBackend || checking) return;
     setChecking(true);
     try {
-      const result = await desktop.checkForUpdates(manifestUrl);
-      if (result.updateAvailable) {
+      const result = await checkForUpdatesWithFallback(desktop, getLocalApiUrl());
+      if (result?.updateAvailable) {
         setUpdate(result);
         setOpen(true);
       } else if (!silent) {
@@ -54,11 +87,11 @@ export default function DesktopUpdatePrompt() {
   };
 
   useEffect(() => {
-    if (!desktop || !manifestUrl) return;
+    if (!desktop || !isLocalBackend) return;
     check(true);
     const timer = window.setInterval(() => check(true), CHECK_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [desktop, manifestUrl]);
+  }, [desktop]);
 
   if (!desktop || !update?.updateAvailable) return null;
 
