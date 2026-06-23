@@ -48,17 +48,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
+      const cachedUser = localAuth.getUser();
+      if (cachedUser) {
+        setUser(cachedUser);
+        setProfile(toLocalProfile(cachedUser));
+      }
+
       localMe()
         .then(({ user }) => {
+          localAuth.setUser(user);
           setUser(user as LocalUser);
           setSession(null);
           setProfile(toLocalProfile(user));
         })
-        .catch(() => {
-          localAuth.clearToken();
-          setUser(null);
-          setSession(null);
-          setProfile(null);
+        .catch((error) => {
+          if (error?.status === 401) {
+            localAuth.clearToken();
+            setUser(null);
+            setSession(null);
+            setProfile(null);
+          }
         })
         .finally(() => setLoading(false));
       return;
@@ -82,6 +91,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const refreshProfile = async () => {
     if (isLocalBackend) {
       const current = await localMe();
+      localAuth.setUser(current.user);
       setUser(current.user);
       setProfile(toLocalProfile(current.user));
       return;
