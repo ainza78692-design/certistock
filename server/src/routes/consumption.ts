@@ -6,6 +6,7 @@ import { query, withTransaction } from "../db.js";
 import { renderAndStoreMassBalance } from "../massBalance.js";
 import { cleanupUnusedCustomers } from "../entityCleanup.js";
 import { buildCombinedProductName } from "../productName.js";
+import { cleanCompositionName } from "../compositionName.js";
 
 const consumptionSchema = z.object({
   productLotId: z.string().uuid(),
@@ -137,6 +138,8 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
         lot.product_detail,
         lot.material_composition,
       ]);
+      const requestedProductName = cleanCompositionName(input.outwardSale.product_name);
+      const fallbackProductName = cleanCompositionName(combinedProductName || lot.additional_info_raw);
 
       const sale = await client.query<any>(
         `insert into outward_sales(
@@ -153,7 +156,7 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
           input.outwardSale.outward_invoice_date || input.invoiceDate || input.consumptionDate || null,
           input.outwardSale.outward_tc_no || null,
           customerName,
-          combinedProductName || input.outwardSale.product_name || lot.additional_info_raw || null,
+          requestedProductName || fallbackProductName || null,
           input.outwardSale.normalized_yarn_key || lot.normalized_yarn_key || null,
           input.outwardSale.outward_net_weight_kg ?? input.outwardNetWeightKg ?? null,
           input.outwardSale.outward_gross_weight_kg ?? input.outwardGrossWeightKg ?? null,
@@ -299,3 +302,4 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
     };
   });
 }
+

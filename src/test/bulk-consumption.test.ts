@@ -4,8 +4,16 @@ import * as XLSX from "xlsx";
 import { describe, expect, it } from "vitest";
 import { calculateOutwardCertifiedWeight } from "@/hooks/useBulkConsumption";
 import { findLotByTcShipment } from "@/lib/bulkConsumptionMatching";
+import { cleanCompositionName } from "@/lib/compositionName";
 import { parseSaledumpFile } from "@/lib/parseSaledump";
 
+describe("composition name cleaning", () => {
+  it("removes only leading item codes and preserves percentages", () => {
+    expect(cleanCompositionName("2616 60% Cotton 40% Polyester")).toBe("60% Cotton 40% Polyester");
+    expect(cleanCompositionName("2134 RECYCLED POLYESTER 100%")).toBe("RECYCLED POLYESTER 100%");
+    expect(cleanCompositionName("60% Cotton 40% Polyester")).toBe("60% Cotton 40% Polyester");
+  });
+});
 describe("bulk saledump consumption", () => {
   const saledumpTesting4 = path.join(process.cwd(), "excel-references", "saledumptesing4.xls");
   const saledumpBoth = path.join(process.cwd(), "excel-references", "saledumpBOTH.xls");
@@ -254,3 +262,4 @@ describe("bulk saledump consumption", () => {
     expect(match.kind).toBe("ambiguous");
   });
 });
+

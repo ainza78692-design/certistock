@@ -3,7 +3,7 @@ import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { ensureCompanyForUser } from "@/lib/ensureCompany";
 import { isLocalBackend } from "@/lib/backendMode";
-import { localAuth, localMe, LocalUser, toLocalProfile } from "@/lib/localApi";
+import { localAuth, localDefaultLogin, localMe, LocalUser, toLocalProfile } from "@/lib/localApi";
 
 type Profile = {
   id: string;
@@ -25,10 +25,11 @@ type AuthCtx = {
 const Ctx = createContext<AuthCtx | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | LocalUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const loadProfile = async (authUser: User) => {
     const { data } = await supabase.from("profiles").select("*").eq("id", authUser.id).maybeSingle();
@@ -43,22 +44,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (isLocalBackend) {
       const token = localAuth.getToken();
-      if (!token) {
-        setLoading(false);
-        return;
-      }
+      const loadUser = token ? localMe : localDefaultLogin;
 
-      localMe()
+      loadUser()
         .then(({ user }) => {
           setUser(user as LocalUser);
           setSession(null);
           setProfile(toLocalProfile(user));
+          setAuthError(null);
         })
-        .catch(() => {
+        .catch((error) => {
           localAuth.clearToken();
           setUser(null);
           setSession(null);
           setProfile(null);
+          setAuthError(error instanceof Error ? error.message : "Could not open the default CertiStock account");
         })
         .finally(() => setLoading(false));
       return;
@@ -100,7 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <Ctx.Provider value={{ user, session, profile, loading, refreshProfile, signOut }}>
+    <Ctx.Provider value={{ user, session, profile, loading, authError, refreshProfile, signOut }}>
       {children}
     </Ctx.Provider>
   );
@@ -111,3 +111,5 @@ export const useAuth = () => {
   if (!c) throw new Error("useAuth must be inside AuthProvider");
   return c;
 };
+
+

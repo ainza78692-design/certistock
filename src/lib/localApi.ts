@@ -49,7 +49,7 @@ export async function localApi<T>(path: string, init: RequestInit = {}): Promise
     });
   } catch (error) {
     throw new Error(
-      `Cannot reach CertiStock local server at ${baseUrl}. Start the local stack or change the server URL on the sign-in page.`
+      `Cannot reach CertiStock local server at ${baseUrl}. Start the local stack or change the local server URL in settings.`
     );
   }
 
@@ -82,6 +82,14 @@ export async function localLogin(email: string, password: string) {
   return data;
 }
 
+export async function localDefaultLogin() {
+  const data = await localApi<{ user: LocalUser; token: string }>("/api/auth/default-login", {
+    method: "POST",
+  });
+  localAuth.setToken(data.token);
+  return data;
+}
+
 export async function localSignup(input: {
   email: string;
   password: string;
@@ -99,3 +107,5 @@ export async function localSignup(input: {
 export async function localMe() {
   return localApi<{ user: LocalUser }>("/api/auth/me");
 }
+
+

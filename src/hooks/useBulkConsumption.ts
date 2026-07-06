@@ -6,6 +6,7 @@ import { isLocalBackend } from "@/lib/backendMode";
 import { localApi } from "@/lib/localApi";
 import { buildBulkLotLabel, findLotByTcShipment } from "@/lib/bulkConsumptionMatching";
 import { parseSaledumpFile, ParsedSaledump, SaledumpRow, TcConsumptionTarget } from "@/lib/parseSaledump";
+import { cleanCompositionName } from "@/lib/compositionName";
 
 export type MatchStatus = "matched" | "partial" | "ambiguous" | "unmatched" | "duplicate" | "skipped" | "done" | "error";
 
@@ -316,7 +317,7 @@ export function useBulkConsumption() {
                 outward_certified_weight_kg: line.outwardCertifiedWeightKg,
                 transport_doc_no: line.ewayBillNo || null,
                 destination: line.sourceRow.consigneeName || null,
-                product_name: line.sourceRow.composition || null,
+                product_name: cleanCompositionName(line.sourceRow.composition) || null,
                 normalized_yarn_key: line.sourceRow.normalizedYarnKey || null,
               },
               allowDuplicatePair: allowPairForLine,
@@ -345,7 +346,7 @@ export function useBulkConsumption() {
               outward_certified_weight_kg: line.outwardCertifiedWeightKg,
               transport_doc_no: line.ewayBillNo || null,
               destination: line.sourceRow.consigneeName || null,
-              product_name: line.sourceRow.composition || null,
+              product_name: cleanCompositionName(line.sourceRow.composition) || null,
               normalized_yarn_key: line.sourceRow.normalizedYarnKey || null,
             },
             allowDuplicatePair: allowPairForLine,
@@ -422,3 +423,5 @@ export function useBulkConsumption() {
     pendingDuplicateConfirmation, confirmDuplicateProcessing, cancelDuplicateProcessing,
   };
 }
+
+

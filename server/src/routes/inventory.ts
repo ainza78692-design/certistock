@@ -279,7 +279,7 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
        from consumption_entries ce
        left join outward_sales os on os.id = ce.outward_sale_id
        where ce.company_id = $1 and ce.product_lot_id = $2
-       order by ce.consumption_date asc nulls last, ce.created_at asc`,
+       order by ce.consumption_date asc nulls last, ce.created_at asc, ce.id asc`,
       [companyId, id],
     );
 
@@ -430,3 +430,5 @@ export async function registerInventoryRoutes(app: FastifyInstance) {
     return result.rows;
   });
 }
+
+

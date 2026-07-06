@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { config } from "../config.js";
 import { hashPassword, loadUserByEmail, requireUser, signToken, verifyPassword } from "../auth.js";
 import { withTransaction } from "../db.js";
 
@@ -16,6 +17,24 @@ const loginSchema = z.object({
 });
 
 export async function registerAuthRoutes(app: FastifyInstance) {
+  app.post("/api/auth/default-login", async (_request, reply) => {
+    const user = await loadUserByEmail(config.defaultUserEmail);
+    if (!user) {
+      return reply.code(404).send({
+        error: `Default account ${config.defaultUserEmail} was not found. Existing client data was not modified.`,
+      });
+    }
+
+    const authUser = {
+      id: user.id,
+      email: user.email,
+      companyId: user.company_id,
+      role: user.role,
+      fullName: user.full_name,
+    };
+
+    return reply.send({ user: authUser, token: signToken(authUser) });
+  });
   app.post("/api/auth/signup", async (request, reply) => {
     const input = signupSchema.parse(request.body);
     const email = input.email.toLowerCase();
@@ -107,3 +126,4 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     return { user: request.user };
   });
 }
+

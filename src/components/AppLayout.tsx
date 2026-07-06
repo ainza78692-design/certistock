@@ -5,10 +5,10 @@ import { AppSidebar } from "./AppSidebar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenuLabel, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Upload, LogOut, User, Sun, Moon } from "lucide-react";
+import { Upload, User, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
 import { GlobalSearch } from "./GlobalSearch";
@@ -16,7 +16,7 @@ import { GlobalSearch } from "./GlobalSearch";
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { profile, user, signOut } = useAuth();
+  const { profile, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   
   const initials = (profile?.full_name || user?.email || "U")
@@ -72,13 +72,10 @@ export default function AppLayout() {
                     <span className="text-xs text-muted-foreground">{user?.email}</span>
                   </div>
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer">
                   <User className="h-4 w-4 mr-2" /> Settings
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={signOut} className="cursor-pointer text-destructive focus:text-destructive">
-                  <LogOut className="h-4 w-4 mr-2" /> Sign out
-                </DropdownMenuItem>
+
               </DropdownMenuContent>
             </DropdownMenu>
           </header>
@@ -92,3 +89,4 @@ export default function AppLayout() {
     </SidebarProvider>
   );
 }
+

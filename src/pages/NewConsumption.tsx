@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,6 +16,7 @@ import { fmtDate, fmtKg } from "@/lib/format";
 import { toast } from "sonner";
 import { Loader2, AlertTriangle, Search, CheckCircle2, FileSpreadsheet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { cleanCompositionName } from "@/lib/compositionName";
 
 export default function NewConsumption() {
   const navigate = useNavigate();
@@ -34,6 +35,7 @@ export default function NewConsumption() {
   const [destination, setDestination] = useState("");
   const [transportDoc, setTransportDoc] = useState("");
   const [vehicleNo, setVehicleNo] = useState("");
+  const [composition, setComposition] = useState("");
   const [consumed, setConsumed] = useState("");
   const [outwardNet, setOutwardNet] = useState("");
   const [outwardGross, setOutwardGross] = useState("");
@@ -51,7 +53,7 @@ export default function NewConsumption() {
       }
 
       const { data } = await supabase.from("product_lots")
-        .select("id, normalized_yarn_key, article_no, additional_info_raw, certified_weight_kg, remaining_stock_kg, transaction_certificates(tc_number), shipments(shipment_no, shipment_date)")
+        .select("id, normalized_yarn_key, article_no, additional_info_raw, product_category, product_detail, material_composition, certified_weight_kg, remaining_stock_kg, transaction_certificates(tc_number), shipments(shipment_no, shipment_date)")
         .eq("company_id", cid!).eq("status", "active").gt("remaining_stock_kg", 0)
         .order("created_at", { ascending: false });
       return data || [];
@@ -91,6 +93,16 @@ export default function NewConsumption() {
   }, [lots, lotSearch]);
 
   const lot = lots?.find((l: any) => l.id === lotId) as any;
+  const defaultComposition = useMemo(() => cleanCompositionName(
+    lot?.material_composition
+    || lot?.additional_info_raw
+    || [lot?.product_category, lot?.product_detail].filter(Boolean).join(" "),
+  ), [lot?.material_composition, lot?.additional_info_raw, lot?.product_category, lot?.product_detail]);
+
+  useEffect(() => {
+    setComposition(defaultComposition);
+  }, [lotId, defaultComposition]);
+
   const consumedNum = Number(consumed || 0);
   const outwardCertNum = Number(outwardCert || consumed || 0);
   const remaining = Number(lot?.remaining_stock_kg || 0);
@@ -121,7 +133,7 @@ export default function NewConsumption() {
               outward_invoice_no: invoiceNo || null,
               outward_invoice_date: invoiceDate || null,
               outward_tc_no: outwardTc || null,
-              product_name: lot?.additional_info_raw || null,
+              product_name: cleanCompositionName(composition) || null,
               normalized_yarn_key: lot?.normalized_yarn_key || null,
               outward_net_weight_kg: outwardNet ? Number(outwardNet) : null,
               outward_gross_weight_kg: outwardGross ? Number(outwardGross) : null,
@@ -154,7 +166,7 @@ export default function NewConsumption() {
             outward_invoice_no: invoiceNo || null,
             outward_invoice_date: invoiceDate || null,
             outward_tc_no: outwardTc || null,
-            product_name: lot?.additional_info_raw || null,
+            product_name: cleanCompositionName(composition) || null,
             normalized_yarn_key: lot?.normalized_yarn_key || null,
             outward_net_weight_kg: outwardNet ? Number(outwardNet) : null,
             outward_gross_weight_kg: outwardGross ? Number(outwardGross) : null,
@@ -270,6 +282,10 @@ export default function NewConsumption() {
               <Field label="Invoice date" type="date" value={invoiceDate} onChange={setInvoiceDate} />
               <Field label="Consumption date" type="date" value={consumptionDate} onChange={setConsumptionDate} />
               <Field label="Outward TC no." value={outwardTc} onChange={setOutwardTc} />
+              <div className="space-y-1.5 col-span-2">
+                <Label className="text-xs">Composition</Label>
+                <Input value={composition} onChange={(e) => setComposition(e.target.value)} placeholder="Composition / product name for MBS" />
+              </div>
               <Field label="Destination" value={destination} onChange={setDestination} />
               <Field label="Transport doc" value={transportDoc} onChange={setTransportDoc} />
               <Field label="Vehicle no." value={vehicleNo} onChange={setVehicleNo} />
@@ -335,3 +351,4 @@ const Field = ({ label, value, onChange, type = "text" }: any) => (
 const Row = ({ label, value }: any) => (
   <div className="flex justify-between"><dt className="text-muted-foreground">{label}</dt><dd className="tabular-nums">{value}</dd></div>
 );
+
