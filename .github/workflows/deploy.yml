@@ -127,4 +127,16 @@ jobs:
           fi
 
       - name: Deploy
-        run: sudo -n /usr/local/bin/deploy-certistock.sh
+        run: |
+          for attempt in 1 2 3 4 5; do
+            echo "Deploy attempt ${attempt}/5"
+            if sudo -n /usr/local/bin/deploy-certistock.sh; then
+              exit 0
+            fi
+            status=$?
+            if [ "$attempt" -eq 5 ]; then
+              exit "$status"
+            fi
+            echo "Deploy failed with exit code ${status}; retrying in 20 seconds..."
+            sleep 20
+          done
