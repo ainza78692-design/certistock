@@ -116,5 +116,10 @@ jobs:
           echo "=================================================="
           sudo -n nft list ruleset || true
 
+      - name: Refresh deploy scripts
+        run: |
+          sudo install -m 755 ops/linux/deploy-certistock.sh /usr/local/bin/deploy-certistock.sh
+          sudo install -m 755 ops/linux/rollback-certistock.sh /usr/local/bin/rollback-certistock.sh
+
       - name: Deploy
         run: sudo /usr/local/bin/deploy-certistock.sh
