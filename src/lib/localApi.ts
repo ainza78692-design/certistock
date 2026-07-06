@@ -1,7 +1,6 @@
 import { getLocalApiUrl } from "@/lib/backendMode";
 
 const TOKEN_KEY = "certistock.local.token";
-const USER_KEY = "certistock.local.user";
 
 export type LocalUser = {
   id: string;
@@ -26,16 +25,8 @@ export const localAuth = {
   setToken(token: string) {
     localStorage.setItem(TOKEN_KEY, token);
   },
-  getUser(): LocalUser | null {
-    const u = localStorage.getItem(USER_KEY);
-    return u ? JSON.parse(u) : null;
-  },
-  setUser(user: LocalUser) {
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
-  },
   clearToken() {
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
   },
 };
 
@@ -58,7 +49,7 @@ export async function localApi<T>(path: string, init: RequestInit = {}): Promise
     });
   } catch (error) {
     const err = new Error(
-      `Cannot reach CertiStock local server at ${baseUrl}. Start the local stack or change the server URL on the sign-in page.`
+      `Cannot reach CertiStock local server at ${baseUrl}. Start the local stack or change the local server URL in settings.`
     ) as any;
     err.status = 0;
     throw err;
@@ -92,7 +83,14 @@ export async function localLogin(email: string, password: string) {
     body: JSON.stringify({ email, password }),
   });
   localAuth.setToken(data.token);
-  localAuth.setUser(data.user);
+  return data;
+}
+
+export async function localDefaultLogin() {
+  const data = await localApi<{ user: LocalUser; token: string }>("/api/auth/default-login", {
+    method: "POST",
+  });
+  localAuth.setToken(data.token);
   return data;
 }
 
@@ -107,7 +105,6 @@ export async function localSignup(input: {
     body: JSON.stringify(input),
   });
   localAuth.setToken(data.token);
-  localAuth.setUser(data.user);
   return data;
 }
 

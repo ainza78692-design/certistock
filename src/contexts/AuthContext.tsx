@@ -3,7 +3,7 @@ import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { ensureCompanyForUser } from "@/lib/ensureCompany";
 import { isLocalBackend } from "@/lib/backendMode";
-import { localAuth, localMe, LocalUser, toLocalProfile } from "@/lib/localApi";
+import { localAuth, localDefaultLogin, localMe, LocalUser, toLocalProfile } from "@/lib/localApi";
 
 type Profile = {
   id: string;
@@ -18,6 +18,7 @@ type AuthCtx = {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
+  authError: string | null;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -33,6 +34,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const loadProfile = async (authUser: User) => {
     const { data } = await supabase.from("profiles").select("*").eq("id", authUser.id).maybeSingle();
@@ -100,7 +102,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const refreshProfile = async () => {
     if (isLocalBackend) {
       const current = await localMe();
-      localAuth.setUser(current.user);
       setUser(current.user);
       setProfile(toLocalProfile(current.user));
       return;
@@ -120,7 +121,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <Ctx.Provider value={{ user, session, profile, loading, refreshProfile, signOut }}>
+    <Ctx.Provider value={{ user, session, profile, loading, authError, refreshProfile, signOut }}>
       {children}
     </Ctx.Provider>
   );
@@ -131,3 +132,4 @@ export const useAuth = () => {
   if (!c) throw new Error("useAuth must be inside AuthProvider");
   return c;
 };
+
