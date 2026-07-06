@@ -88,8 +88,13 @@ npm run build
 npm run server:build
 
 echo "Reloading PM2..."
-sudo -u certistock bash -lc "set -a; source '$APP_DIR/.env'; set +a; pm2 startOrReload ecosystem.config.cjs --update-env"
-sudo -u certistock pm2 save
+PM2_HOME_DIR="${PM2_HOME:-$APP_DIR/.pm2}"
+mkdir -p "$PM2_HOME_DIR/logs" "$PM2_HOME_DIR/pids" "$PM2_HOME_DIR/modules"
+touch "$PM2_HOME_DIR/module_conf.json" "$PM2_HOME_DIR/pm2.log"
+chown -R certistock:certistock "$PM2_HOME_DIR"
+
+sudo -u certistock env HOME="$APP_DIR" PM2_HOME="$PM2_HOME_DIR" bash -lc "set -a; source '$APP_DIR/.env'; set +a; pm2 startOrReload ecosystem.config.cjs --update-env"
+sudo -u certistock env HOME="$APP_DIR" PM2_HOME="$PM2_HOME_DIR" pm2 save
 
 echo "Restarting OCR worker if present..."
 if systemctl list-unit-files | grep -q '^certistock-ocr.service'; then
