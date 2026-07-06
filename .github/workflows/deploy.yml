@@ -118,8 +118,13 @@ jobs:
 
       - name: Refresh deploy scripts
         run: |
-          sudo install -m 755 ops/linux/deploy-certistock.sh /usr/local/bin/deploy-certistock.sh
-          sudo install -m 755 ops/linux/rollback-certistock.sh /usr/local/bin/rollback-certistock.sh
+          chmod 755 ops/linux/deploy-certistock.sh ops/linux/rollback-certistock.sh
+          if sudo -n true 2>/dev/null; then
+            sudo install -m 755 ops/linux/deploy-certistock.sh /usr/local/bin/deploy-certistock.sh
+            sudo install -m 755 ops/linux/rollback-certistock.sh /usr/local/bin/rollback-certistock.sh
+          else
+            echo "::warning::Runner does not have passwordless broad sudo; skipping /usr/local/bin refresh and using the installed deploy command."
+          fi
 
       - name: Deploy
-        run: sudo /usr/local/bin/deploy-certistock.sh
+        run: sudo -n /usr/local/bin/deploy-certistock.sh

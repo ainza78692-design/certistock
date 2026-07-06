@@ -14,6 +14,7 @@
     "electron:dev": "node electron/dev.cjs",
     "desktop:build": "npm run build && node electron/build.cjs",
     "publish:update": "node server/scripts/publish-update.js",
+    "postinstall": "node scripts/prepare-pm2-home.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
