@@ -91,18 +91,20 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
        sh.consignee_name,
        sh.consignee_address,
        sh.consignee_te_id
-     from product_lots l
-     left join transaction_certificates tc on tc.id = l.transaction_certificate_id
-     left join suppliers s on s.id = tc.supplier_id
-     left join shipments sh on sh.id = l.shipment_id
-     where l.company_id = $1 and l.id = $2
-     limit 1`,
+      from product_lots l
+      left join transaction_certificates tc on tc.id = l.transaction_certificate_id
+      left join suppliers s on s.id = tc.supplier_id
+      left join shipments sh on sh.id = l.shipment_id
+      where l.company_id = $1 and l.id = $2
+      limit 1`,
     [companyId, productLotId],
   );
 
   const lot: any = lotResult.rows[0];
   if (!lot) throw new Error("Product lot not found");
 
+  // CRITICAL: Maintain strict chronological order for MBS export
+  // Primary sort: consumption_date (earliest first), then by created_at (entry creation order)
   const entries = await query(
     `select
        ce.id,
@@ -120,11 +122,12 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
        os.outward_gross_weight_kg,
        os.transport_doc_no,
        os.vehicle_no,
-       os.destination
-     from consumption_entries ce
-     left join outward_sales os on os.id = ce.outward_sale_id
-     where ce.company_id = $1 and ce.product_lot_id = $2
-     order by ce.consumption_date asc nulls last, ce.created_at asc`,
+       os.destination,
+       ce.created_at
+      from consumption_entries ce
+      left join outward_sales os on os.id = ce.outward_sale_id
+      where ce.company_id = $1 and ce.product_lot_id = $2
+      order by ce.consumption_date asc nulls last, ce.created_at asc`,
     [companyId, productLotId],
   );
 

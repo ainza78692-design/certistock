@@ -24,8 +24,12 @@ type AuthCtx = {
 
 const Ctx = createContext<AuthCtx | undefined>(undefined);
 
+// Default company for single-user mode (no authentication)
+const DEFAULT_COMPANY_ID = "single-user-company";
+const DEFAULT_USER_ID = "single-user";
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | LocalUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,19 +77,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) setTimeout(() => loadProfile(s.user), 0);
-      else setProfile(null);
-    });
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) loadProfile(s.user);
-      setLoading(false);
-    });
-    return () => sub.subscription.unsubscribe();
+    // Auto-login with default user (no authentication required)
+    const defaultUser: any = {
+      id: DEFAULT_USER_ID,
+      email: "system@certistock.local",
+    };
+    
+    const defaultProfile: Profile = {
+      id: DEFAULT_USER_ID,
+      company_id: DEFAULT_COMPANY_ID,
+      full_name: "System User",
+      email: "system@certistock.local",
+      avatar_url: null,
+    };
+
+    setUser(defaultUser);
+    setProfile(defaultProfile);
+    setSession(null);
+    setLoading(false);
   }, []);
 
   const refreshProfile = async () => {
@@ -96,8 +105,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setProfile(toLocalProfile(current.user));
       return;
     }
-    if (user) await loadProfile(user as User);
+    // No-op for single-user mode
   };
+
   const signOut = async () => {
     if (isLocalBackend) {
       localAuth.clearToken();
@@ -106,7 +116,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setProfile(null);
       return;
     }
-    await supabase.auth.signOut();
+    // No-op for single-user mode
   };
 
   return (

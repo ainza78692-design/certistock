@@ -34,6 +34,7 @@ export default function NewConsumption() {
   const [destination, setDestination] = useState("");
   const [transportDoc, setTransportDoc] = useState("");
   const [vehicleNo, setVehicleNo] = useState("");
+  const [composition, setComposition] = useState("");
   const [consumed, setConsumed] = useState("");
   const [outwardNet, setOutwardNet] = useState("");
   const [outwardGross, setOutwardGross] = useState("");
@@ -51,7 +52,7 @@ export default function NewConsumption() {
       }
 
       const { data } = await supabase.from("product_lots")
-        .select("id, normalized_yarn_key, article_no, additional_info_raw, certified_weight_kg, remaining_stock_kg, transaction_certificates(tc_number), shipments(shipment_no, shipment_date)")
+        .select("id, normalized_yarn_key, article_no, additional_info_raw, certified_weight_kg, remaining_stock_kg, material_composition, transaction_certificates(tc_number), shipments(shipment_no, shipment_date)")
         .eq("company_id", cid!).eq("status", "active").gt("remaining_stock_kg", 0)
         .order("created_at", { ascending: false });
       return data || [];
@@ -91,6 +92,11 @@ export default function NewConsumption() {
   }, [lots, lotSearch]);
 
   const lot = lots?.find((l: any) => l.id === lotId) as any;
+  
+  // Auto-populate composition when lot is selected
+  const lotComposition = lot?.material_composition || "";
+  const displayComposition = composition || lotComposition;
+
   const consumedNum = Number(consumed || 0);
   const outwardCertNum = Number(outwardCert || consumed || 0);
   const remaining = Number(lot?.remaining_stock_kg || 0);
@@ -117,6 +123,7 @@ export default function NewConsumption() {
             consumedWeightKg: consumedNum,
             consumptionDate: consumptionDate || null,
             remarks: remarks || null,
+            composition: displayComposition || null,
             outwardSale: {
               outward_invoice_no: invoiceNo || null,
               outward_invoice_date: invoiceDate || null,
@@ -150,6 +157,7 @@ export default function NewConsumption() {
           consumedWeightKg: consumedNum,
           consumptionDate: consumptionDate || null,
           remarks: remarks || null,
+          composition: displayComposition || null,
           outwardSale: {
             outward_invoice_no: invoiceNo || null,
             outward_invoice_date: invoiceDate || null,
@@ -215,8 +223,11 @@ export default function NewConsumption() {
                   <button
                     type="button"
                     key={l.id}
-                    onClick={() => setLotId(l.id)}
-                    className={`w-full text-left rounded-xl border p-3 transition-all duration-200 hover:border-primary/40 hover:bg-primary/[0.02] ${selected ? "border-primary/50 bg-primary/[0.04]" : "border-border/60 bg-background"}`}
+                    onClick={() => {
+                      setLotId(l.id);
+                      setComposition(l.material_composition || "");
+                    }}
+                    className={`w-full text-left rounded-xl border p-3 transition-all duration-200 hover:border-primary/40 hover:bg-primary/[0.02] ${selected ? "border-primary/50 bg-primary/[0.04]" : "border-border"}`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -270,6 +281,7 @@ export default function NewConsumption() {
               <Field label="Invoice date" type="date" value={invoiceDate} onChange={setInvoiceDate} />
               <Field label="Consumption date" type="date" value={consumptionDate} onChange={setConsumptionDate} />
               <Field label="Outward TC no." value={outwardTc} onChange={setOutwardTc} />
+              <Field label="Composition" value={displayComposition} onChange={setComposition} placeholder="e.g., 100% Polyester" />
               <Field label="Destination" value={destination} onChange={setDestination} />
               <Field label="Transport doc" value={transportDoc} onChange={setTransportDoc} />
               <Field label="Vehicle no." value={vehicleNo} onChange={setVehicleNo} />
@@ -322,13 +334,13 @@ export default function NewConsumption() {
   );
 }
 
-const Field = ({ label, value, onChange, type = "text" }: any) => (
+const Field = ({ label, value, onChange, type = "text", placeholder }: any) => (
   <div className="space-y-1.5">
     <Label className="text-xs">{label}</Label>
     {type === "date" ? (
       <DatePicker value={value} onChange={onChange} />
     ) : (
-      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
     )}
   </div>
 );
