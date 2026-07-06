@@ -4,7 +4,7 @@ import { AppSidebar } from "./AppSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function AppLayout() {
-  const { loading } = useAuth();
+  const { loading, authError } = useAuth();
 
   if (loading) {
     return (
@@ -12,6 +12,17 @@ export default function AppLayout() {
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
           <p className="mt-4 text-sm text-muted-foreground">Loading CertiStock...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <div className="max-w-lg rounded-lg border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold">Could not open CertiStock</h1>
+          <p className="mt-3 text-sm text-muted-foreground">{authError}</p>
         </div>
       </div>
     );

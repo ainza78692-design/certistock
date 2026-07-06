@@ -48,34 +48,47 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (isLocalBackend) {
-      const token = localAuth.getToken();
-      if (!token) {
-        setLoading(false);
-        return;
-      }
+      const loadLocalUser = async () => {
+        setAuthError(null);
+        const cachedUser = localAuth.getUser();
+        if (cachedUser) {
+          setUser(cachedUser);
+          setProfile(toLocalProfile(cachedUser));
+        }
 
-      const cachedUser = localAuth.getUser();
-      if (cachedUser) {
-        setUser(cachedUser);
-        setProfile(toLocalProfile(cachedUser));
-      }
-
-      localMe()
-        .then(({ user }) => {
-          localAuth.setUser(user);
-          setUser(user as LocalUser);
+        try {
+          const result = localAuth.getToken()
+            ? await localMe()
+            : await localDefaultLogin();
+          localAuth.setUser(result.user);
+          setUser(result.user as LocalUser);
           setSession(null);
-          setProfile(toLocalProfile(user));
-        })
-        .catch((error) => {
+          setProfile(toLocalProfile(result.user));
+        } catch (error: any) {
           if (error?.status === 401) {
             localAuth.clearToken();
-            setUser(null);
-            setSession(null);
-            setProfile(null);
+            try {
+              const result = await localDefaultLogin();
+              localAuth.setUser(result.user);
+              setUser(result.user as LocalUser);
+              setSession(null);
+              setProfile(toLocalProfile(result.user));
+              return;
+            } catch (retryError: any) {
+              setAuthError(retryError?.message || "Could not open the default CertiStock account.");
+            }
+          } else {
+            setAuthError(error?.message || "Could not open the default CertiStock account.");
           }
-        })
-        .finally(() => setLoading(false));
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      void loadLocalUser();
       return;
     }
 

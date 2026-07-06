@@ -1,6 +1,7 @@
 import { getLocalApiUrl } from "@/lib/backendMode";
 
 const TOKEN_KEY = "certistock.local.token";
+const USER_KEY = "certistock.local.user";
 
 export type LocalUser = {
   id: string;
@@ -27,6 +28,20 @@ export const localAuth = {
   },
   clearToken() {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  },
+  getUser(): LocalUser | null {
+    const raw = localStorage.getItem(USER_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as LocalUser;
+    } catch {
+      localStorage.removeItem(USER_KEY);
+      return null;
+    }
+  },
+  setUser(user: LocalUser) {
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
   },
 };
 
