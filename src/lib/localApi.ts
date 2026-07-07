@@ -3,6 +3,14 @@ import { getLocalApiUrl } from "@/lib/backendMode";
 const TOKEN_KEY = "certistock.local.token";
 const USER_KEY = "certistock.local.user";
 
+const TESTER_EMAIL = "tester@certistock.local";
+const TESTER_PASSWORD = "Tester@123";
+
+const fallbackAccounts: LocalAccountOption[] = [
+  { id: "yes_fashion", label: "yes_fashion", email: "yesfashion@gmail.com", companyId: "" },
+  { id: "tester", label: "tester", email: TESTER_EMAIL, companyId: "" },
+];
+
 export type LocalUser = {
   id: string;
   email: string;
@@ -133,15 +141,63 @@ export async function localMe() {
   return localApi<{ user: LocalUser }>("/api/auth/me");
 }
 export async function localAccounts() {
-  return localApi<{ accounts: LocalAccountOption[] }>("/api/auth/accounts");
+  try {
+    return await localApi<{ accounts: LocalAccountOption[] }>("/api/auth/accounts");
+  } catch (error: any) {
+    if (error?.status === 404) return { accounts: fallbackAccounts };
+    throw error;
+  }
+}
+
+async function loginAndStore(email: string, password: string) {
+  const data = await localLogin(email, password);
+  localAuth.setUser(data.user);
+  return data;
+}
+
+async function signupTesterAndStore() {
+  const data = await localSignup({
+    email: TESTER_EMAIL,
+    password: TESTER_PASSWORD,
+    fullName: "tester",
+    companyName: "CertiStock Tester",
+  });
+  localAuth.setUser(data.user);
+  return data;
+}
+
+async function switchAccountWithCompatibilityFallback(account: LocalAccountOption["id"]) {
+  if (account === "yes_fashion") {
+    const data = await localDefaultLogin();
+    localAuth.setUser(data.user);
+    return data;
+  }
+
+  try {
+    return await loginAndStore(TESTER_EMAIL, TESTER_PASSWORD);
+  } catch {
+    try {
+      return await signupTesterAndStore();
+    } catch (signupError: any) {
+      if (signupError?.status === 400) {
+        return loginAndStore(TESTER_EMAIL, TESTER_PASSWORD);
+      }
+      throw signupError;
+    }
+  }
 }
 
 export async function localSwitchAccount(account: LocalAccountOption["id"]) {
-  const data = await localApi<{ user: LocalUser; token: string }>("/api/auth/switch-account", {
-    method: "POST",
-    body: JSON.stringify({ account }),
-  });
-  localAuth.setToken(data.token);
-  localAuth.setUser(data.user);
-  return data;
+  try {
+    const data = await localApi<{ user: LocalUser; token: string }>("/api/auth/switch-account", {
+      method: "POST",
+      body: JSON.stringify({ account }),
+    });
+    localAuth.setToken(data.token);
+    localAuth.setUser(data.user);
+    return data;
+  } catch (error: any) {
+    if (error?.status === 404) return switchAccountWithCompatibilityFallback(account);
+    throw error;
+  }
 }
