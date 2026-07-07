@@ -11,6 +11,12 @@ export type LocalUser = {
   fullName: string | null;
 };
 
+export type LocalAccountOption = {
+  id: "yes_fashion" | "tester";
+  label: string;
+  email: string;
+  companyId: string;
+};
 export type LocalProfile = {
   id: string;
   company_id: string;
@@ -125,4 +131,17 @@ export async function localSignup(input: {
 
 export async function localMe() {
   return localApi<{ user: LocalUser }>("/api/auth/me");
+}
+export async function localAccounts() {
+  return localApi<{ accounts: LocalAccountOption[] }>("/api/auth/accounts");
+}
+
+export async function localSwitchAccount(account: LocalAccountOption["id"]) {
+  const data = await localApi<{ user: LocalUser; token: string }>("/api/auth/switch-account", {
+    method: "POST",
+    body: JSON.stringify({ account }),
+  });
+  localAuth.setToken(data.token);
+  localAuth.setUser(data.user);
+  return data;
 }

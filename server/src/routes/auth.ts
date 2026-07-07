@@ -16,25 +16,112 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const accountSwitchSchema = z.object({
+  account: z.enum(["yes_fashion", "tester"]),
+});
+
+const TESTER_EMAIL = "tester@certistock.local";
+const TESTER_PASSWORD = "Tester@123";
+
+function authUserFromDb(user: NonNullable<Awaited<ReturnType<typeof loadUserByEmail>>>) {
+  return {
+    id: user.id,
+    email: user.email,
+    companyId: user.company_id,
+    role: user.role,
+    fullName: user.full_name,
+  };
+}
+
+async function toAuthUserByEmail(email: string) {
+  const user = await loadUserByEmail(email);
+  return user ? authUserFromDb(user) : null;
+}
+
+async function ensureTesterAccount() {
+  const existing = await toAuthUserByEmail(TESTER_EMAIL);
+  if (existing) return existing;
+
+  const passwordHash = await hashPassword(TESTER_PASSWORD);
+  return withTransaction(async (client) => {
+    const userResult = await client.query<{ id: string; email: string }>(
+      `insert into app_users(email, password_hash)
+       values ($1, $2)
+       returning id, email`,
+      [TESTER_EMAIL, passwordHash],
+    );
+    const companyResult = await client.query<{ id: string }>(
+      `insert into companies(name)
+       values ($1)
+       returning id`,
+      ["CertiStock Tester"],
+    );
+
+    const user = userResult.rows[0];
+    const company = companyResult.rows[0];
+    await client.query(
+      `insert into profiles(id, company_id, full_name, email)
+       values ($1, $2, $3, $4)`,
+      [user.id, company.id, "tester", user.email],
+    );
+    await client.query(
+      `insert into user_roles(user_id, company_id, role)
+       values ($1, $2, 'owner')`,
+      [user.id, company.id],
+    );
+
+    return {
+      id: user.id,
+      email: user.email,
+      companyId: company.id,
+      role: "owner",
+      fullName: "tester",
+    };
+  });
+}
+
+async function loadSwitchAccount(account: "yes_fashion" | "tester") {
+  if (account === "tester") return ensureTesterAccount();
+  const user = await toAuthUserByEmail(config.defaultUserEmail);
+  if (!user) {
+    throw new Error(`Default account ${config.defaultUserEmail} was not found. Existing client data was not modified.`);
+  }
+  return user;
+}
+
 export async function registerAuthRoutes(app: FastifyInstance) {
   app.post("/api/auth/default-login", async (_request, reply) => {
-    const user = await loadUserByEmail(config.defaultUserEmail);
-    if (!user) {
+    const authUser = await toAuthUserByEmail(config.defaultUserEmail);
+    if (!authUser) {
       return reply.code(404).send({
         error: `Default account ${config.defaultUserEmail} was not found. Existing client data was not modified.`,
       });
     }
 
-    const authUser = {
-      id: user.id,
-      email: user.email,
-      companyId: user.company_id,
-      role: user.role,
-      fullName: user.full_name,
-    };
-
     return reply.send({ user: authUser, token: signToken(authUser) });
   });
+
+  app.get("/api/auth/accounts", async () => {
+    const yesFashion = await toAuthUserByEmail(config.defaultUserEmail);
+    const tester = await ensureTesterAccount();
+    return {
+      accounts: [
+        yesFashion ? { id: "yes_fashion", label: "yes_fashion", email: yesFashion.email, companyId: yesFashion.companyId } : null,
+        { id: "tester", label: "tester", email: tester.email, companyId: tester.companyId },
+      ].filter(Boolean),
+    };
+  });
+
+  app.post("/api/auth/switch-account", async (request, reply) => {
+    const input = accountSwitchSchema.parse(request.body || {});
+    try {
+      const user = await loadSwitchAccount(input.account);
+      return reply.send({ user, token: signToken(user) });
+    } catch (error) {
+      return reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   app.post("/api/auth/signup", async (request, reply) => {
     const input = signupSchema.parse(request.body);
     const email = input.email.toLowerCase();
@@ -111,14 +198,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       return null;
     });
 
-    const authUser = {
-      id: user.id,
-      email: user.email,
-      companyId: user.company_id,
-      role: user.role,
-      fullName: user.full_name,
-    };
-
+    const authUser = authUserFromDb(user);
     return reply.send({ user: authUser, token: signToken(authUser) });
   });
 
