@@ -442,7 +442,7 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
 
         # K – outward product name
         if entry:
-            sc(r, 11, sale.get("product_name") or product_raw, F_D11, align=A_CC)
+            sc(r, 11, sale.get("product_name") or "", F_D11, align=A_CC)
 
         # L – loss % (live formula only for real outward rows)
         if entry:

@@ -1,22 +1,23 @@
 /**
- * Strip numeric prefixes from composition names
- * e.g., "2616 Polyester" -> "Polyester"
- * but keep percentage information intact
- * e.g., "100% Polyester" -> "100% Polyester"
+ * Clean composition text for outward Mass Balance Product Name cells.
+ * Removes only one leading numeric item/code token, while preserving percentages.
  */
-function cleanCompositionName(name: string | null | undefined): string {
+export function cleanCompositionForMassBalance(value: string | null | undefined): string {
+  return String(value || "").replace(/^\s*\d+\s+/, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Existing inward/product-name cleanup. Kept separate so inward data behavior stays unchanged.
+ */
+function cleanProductNamePart(name: string | null | undefined): string {
   if (!name) return "";
-  
+
   const trimmed = name.trim();
-  
-  // Pattern: starts with digits followed by space(s), then text
-  // but NOT if it contains % (that's a percentage format we want to keep)
   const match = trimmed.match(/^(\d+)\s+(.+)$/);
   if (match && !trimmed.includes("%")) {
-    // Remove leading number: "2616 Polyester" -> "Polyester"
     return match[2].trim();
   }
-  
+
   return trimmed;
 }
 
@@ -25,7 +26,7 @@ export function buildCombinedProductName(
 ): string {
   return parts
     .filter((p) => p && p.trim())
-    .map((p) => cleanCompositionName(p))
+    .map((p) => cleanProductNamePart(p))
     .filter((p) => p)
     .join(" - ");
 }

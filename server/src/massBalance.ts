@@ -1,6 +1,6 @@
 import { config } from "./config.js";
 import { query } from "./db.js";
-import { buildCombinedProductName } from "./productName.js";
+import { buildCombinedProductName, cleanCompositionForMassBalance } from "./productName.js";
 import { buckets, buildMassBalanceStoragePath, massBalanceFileName, writeStoredFile } from "./storage.js";
 
 function toNumber(value: unknown): number | null {
@@ -131,6 +131,17 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
     [companyId, productLotId],
   );
 
+  const inwardProductName = buildCombinedProductName([
+    lot.product_category,
+    lot.product_detail,
+    lot.material_composition,
+  ]);
+
+  const outwardProductName = (value: string | null | undefined) => {
+    const cleaned = cleanCompositionForMassBalance(value);
+    return cleaned && cleaned !== inwardProductName ? cleaned : "";
+  };
+
   const payload = {
     company_id: companyId,
     transaction_certificate_id: lot.transaction_certificate_id,
@@ -157,11 +168,7 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
     lot: {
       id: lot.id,
       normalized_yarn_key: lot.normalized_yarn_key ?? null,
-      product_name: buildCombinedProductName([
-        lot.product_category,
-        lot.product_detail,
-        lot.material_composition,
-      ]),
+      product_name: inwardProductName,
       article_no: lot.article_no ?? null,
       product_no: lot.product_no ?? null,
       number_of_units: lot.number_of_units ?? null,
@@ -188,7 +195,7 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
         outward_invoice_date: entry.outward_invoice_date,
         outward_tc_no: entry.outward_tc_no,
         customer_name_snapshot: entry.customer_name_snapshot,
-        product_name: entry.product_name,
+        product_name: outwardProductName(entry.product_name),
         outward_net_weight_kg: entry.outward_net_weight_kg,
         outward_gross_weight_kg: entry.outward_gross_weight_kg,
         outward_certified_weight_kg: entry.outward_certified_weight_kg,

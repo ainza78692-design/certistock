@@ -5,7 +5,7 @@ import { requireUser } from "../auth.js";
 import { query, withTransaction } from "../db.js";
 import { renderAndStoreMassBalance } from "../massBalance.js";
 import { cleanupUnusedCustomers } from "../entityCleanup.js";
-import { buildCombinedProductName } from "../productName.js";
+import { cleanCompositionForMassBalance } from "../productName.js";
 
 const consumptionSchema = z.object({
   productLotId: z.string().uuid(),
@@ -15,6 +15,7 @@ const consumptionSchema = z.object({
   newCustomer: z.string().optional().nullable(),
   consumptionDate: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
+  composition: z.string().optional().nullable(),
   outwardSale: z.object({
     outward_invoice_no: z.string().optional().nullable(),
     outward_invoice_date: z.string().optional().nullable(),
@@ -132,11 +133,9 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
         ?? input.outwardSale.outward_certified_weight_kg
         ?? input.consumedWeightKg,
       );
-      const combinedProductName = buildCombinedProductName([
-        lot.product_category,
-        lot.product_detail,
-        lot.material_composition,
-      ]);
+      const outwardComposition = cleanCompositionForMassBalance(
+        input.outwardSale.product_name || input.composition || null,
+      );
 
       const sale = await client.query<any>(
         `insert into outward_sales(
@@ -153,7 +152,7 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
           input.outwardSale.outward_invoice_date || input.invoiceDate || input.consumptionDate || null,
           input.outwardSale.outward_tc_no || null,
           customerName,
-          combinedProductName || input.outwardSale.product_name || lot.additional_info_raw || null,
+          outwardComposition || null,
           input.outwardSale.normalized_yarn_key || lot.normalized_yarn_key || null,
           input.outwardSale.outward_net_weight_kg ?? input.outwardNetWeightKg ?? null,
           input.outwardSale.outward_gross_weight_kg ?? input.outwardGrossWeightKg ?? null,
