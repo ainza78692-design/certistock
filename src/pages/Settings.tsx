@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import PageHeader from "@/components/PageHeader";
@@ -14,8 +15,10 @@ const accountIdForEmail = (email?: string | null) => {
 };
 
 export default function Settings() {
-  const { profile, user } = useAuth();
+  const { profile, user, refreshProfile } = useAuth();
   const [switching, setSwitching] = useState(false);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const currentAccountId = accountIdForEmail(user?.email);
 
   const { data: accountData } = useQuery({
@@ -35,8 +38,11 @@ export default function Settings() {
     setSwitching(true);
     try {
       await localSwitchAccount(account);
+      queryClient.clear();
+      await refreshProfile();
       toast.success(`Switched to ${account === "tester" ? "tester" : "yes_fashion"}`);
-      window.location.assign("/");
+      navigate("/", { replace: true });
+      setSwitching(false);
     } catch (error: any) {
       toast.error(error?.message || "Could not switch account");
       setSwitching(false);
