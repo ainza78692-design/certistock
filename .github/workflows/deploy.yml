@@ -130,7 +130,7 @@ jobs:
         run: |
           for attempt in 1 2 3 4 5; do
             echo "Deploy attempt ${attempt}/5"
-            if sudo -n /usr/local/bin/deploy-certistock.sh; then
+            if sudo -n env CERTISTOCK_SOURCE_DIR="$GITHUB_WORKSPACE" /usr/local/bin/deploy-certistock.sh; then
               exit 0
             fi
             status=$?

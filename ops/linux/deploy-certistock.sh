@@ -55,10 +55,23 @@ mkdir -p "$(dirname "$DEPLOY_HISTORY")"
 echo "Creating predeploy backup..."
 tar czf "$BACKUP_DIR/$(date +%Y%m%d-%H%M%S).tar.gz" --exclude=node_modules --exclude=.git --exclude=logs --exclude=tmp --exclude=cache .
 
-echo "Fetching latest code..."
-git fetch origin
-git reset --hard origin/main
-git clean -fd
+if [[ -n "${CERTISTOCK_SOURCE_DIR:-}" && -d "$CERTISTOCK_SOURCE_DIR/.git" ]]; then
+  echo "Syncing checked-out workflow code from $CERTISTOCK_SOURCE_DIR..."
+  rsync -a --delete \
+    --exclude ".env" \
+    --exclude "node_modules" \
+    --exclude ".pm2" \
+    --exclude "logs" \
+    --exclude "tmp" \
+    --exclude "cache" \
+    --exclude "ocr-worker/.venv" \
+    "$CERTISTOCK_SOURCE_DIR"/ "$APP_DIR"/
+else
+  echo "Fetching latest code..."
+  git fetch origin
+  git reset --hard origin/main
+  git clean -fd
+fi
 
 echo "Removing non-server Windows/Electron artifacts..."
 find "$APP_DIR" -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" \) -delete
