@@ -374,24 +374,6 @@ export function useBulkConsumption() {
     await runProcessAll(lines, false);
   }, [lines, runProcessAll]);
 
-  const repairDuplicateCompositions = useCallback(async () => {
-    if (!isLocalBackend) throw new Error("Composition repair is available only in local backend mode");
-    const rows = lines
-      .filter((line) => line.status === "duplicate" && line.sourceRow.composition)
-      .map((line) => ({
-        outward_invoice_no: line.invoiceNo || null,
-        transport_doc_no: line.ewayBillNo || null,
-        product_name: line.sourceRow.composition || null,
-      }));
-    if (!rows.length) return { updatedCount: 0, regeneratedCount: 0, failed: [] as any[] };
-    return localApi<{ ok: boolean; updatedCount: number; regeneratedCount: number; failed: any[] }>(
-      "/api/consumption/repair-compositions",
-      {
-        method: "POST",
-        body: JSON.stringify({ rows }),
-      },
-    );
-  }, [lines]);
   const confirmDuplicateProcessing = useCallback(async () => {
     const nextLines = lines.map((line) => (
       line.status === "duplicate"
@@ -437,6 +419,6 @@ export function useBulkConsumption() {
   return {
     step, parsed, lines, lots, customers, stats, processing, processedCount, processableCount,
     handleFile, toggleSkip, updateLot, updateWeight, processAll, reset, setStep,
-    pendingDuplicateConfirmation, confirmDuplicateProcessing, cancelDuplicateProcessing, repairDuplicateCompositions,
+    pendingDuplicateConfirmation, confirmDuplicateProcessing, cancelDuplicateProcessing,
   };
 }
