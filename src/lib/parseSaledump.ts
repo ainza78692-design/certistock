@@ -172,6 +172,49 @@ const BASE = {
   shade:       23,  // X
 };
 
+
+type BaseColumnMap = typeof BASE;
+
+function findHeaderColumn(header: unknown[], names: string[], fallback: number): number {
+  const wanted = names.map((name) => normalizeHeader(name));
+  const exact = header.findIndex((cell) => wanted.includes(normalizeHeader(cell)));
+  if (exact >= 0) return exact;
+
+  const compactWanted = wanted.map((name) => name.replace(/[^A-Z0-9]/g, ""));
+  const fuzzy = header.findIndex((cell) => {
+    const compact = normalizeHeader(cell).replace(/[^A-Z0-9]/g, "");
+    return compactWanted.includes(compact);
+  });
+  return fuzzy >= 0 ? fuzzy : fallback;
+}
+
+function resolveBaseColumns(header: unknown[]): BaseColumnMap {
+  return {
+    invoiceNo: findHeaderColumn(header, ["Invoice No.", "Invoice No", "Invoice"], BASE.invoiceNo),
+    invoiceDt: findHeaderColumn(header, ["Invoice Date", "Inv Date"], BASE.invoiceDt),
+    ewayBillNo: findHeaderColumn(header, ["E-Way Bill No.", "Eway Bill No", "E Way Bill No"], BASE.ewayBillNo),
+    ewayBillDt: findHeaderColumn(header, ["E-Way Bill Date", "Eway Bill Date", "E Way Bill Date"], BASE.ewayBillDt),
+    sellerName: findHeaderColumn(header, ["Seller Name", "Seller"], BASE.sellerName),
+    sellerAddr: findHeaderColumn(header, ["Seller Address", "Seller Add."], BASE.sellerAddr),
+    buyerName: findHeaderColumn(header, ["Buyer Name", "Buyer"], BASE.buyerName),
+    buyerAddr: findHeaderColumn(header, ["Buyer Add.", "Buyer Address"], BASE.buyerAddr),
+    consignee: findHeaderColumn(header, ["Consignee", "Consignee Name"], BASE.consignee),
+    consAddr: findHeaderColumn(header, ["Consignee Add.", "Consignee Address"], BASE.consAddr),
+    poNo: findHeaderColumn(header, ["P.O. No.", "PO No", "P O No"], BASE.poNo),
+    composition: findHeaderColumn(header, ["Composition"], BASE.composition),
+    count: findHeaderColumn(header, ["Count"], BASE.count),
+    construction: findHeaderColumn(header, ["Construction"], BASE.construction),
+    gsm: findHeaderColumn(header, ["GSM"], BASE.gsm),
+    width: findHeaderColumn(header, ["Width"], BASE.width),
+    certWt: findHeaderColumn(header, ["C.Wt.", "C.Wt", "C Wt"], BASE.certWt),
+    grossWt: findHeaderColumn(header, ["GR.Wt.", "GR.Wt", "Gross Weight"], BASE.grossWt),
+    netWt: findHeaderColumn(header, ["Nt.Wt.", "Nt.Wt", "Net Weight"], BASE.netWt),
+    qty: findHeaderColumn(header, ["Qty", "Quantity"], BASE.qty),
+    uom: findHeaderColumn(header, ["UOM", "Unit"], BASE.uom),
+    style: findHeaderColumn(header, ["Style"], BASE.style),
+    shade: findHeaderColumn(header, ["Shade"], BASE.shade),
+  };
+}
 const EXTENDED_START = 24;
 
 function isCertBodyHeader(v: unknown): boolean {
@@ -334,6 +377,7 @@ export async function parseSaledumpFile(file: File): Promise<ParsedSaledump> {
   }
 
   const header = data[headerIdx] as unknown[];
+  const base = resolveBaseColumns(header);
   const format = detectFormat(header);
   const rows: SaledumpRow[] = [];
 
@@ -341,12 +385,12 @@ export async function parseSaledumpFile(file: File): Promise<ParsedSaledump> {
     const raw = data[i] as unknown[];
     if (!raw || !raw.length) continue;
 
-    const invoiceNo = toStr(raw[BASE.invoiceNo]);
+    const invoiceNo = toStr(raw[base.invoiceNo]);
     // Skip empty rows or repeated header rows
     if (!invoiceNo || invoiceNo.toUpperCase() === "INVOICE NO.") continue;
 
-    const count = toStr(raw[BASE.count]);
-    const composition = toStr(raw[BASE.composition]);
+    const count = toStr(raw[base.count]);
+    const composition = toStr(raw[base.composition]);
     const normalizedYarnKey = normalizeCountField(count, composition);
 
     let tcEntries: TcConsumptionTarget[] = [];
@@ -368,27 +412,27 @@ export async function parseSaledumpFile(file: File): Promise<ParsedSaledump> {
     rows.push({
       rowIndex: i,
       invoiceNo,
-      invoiceDate: parseDateCell(raw[BASE.invoiceDt]),
-      ewayBillNo: toStr(raw[BASE.ewayBillNo]),
-      ewayBillDate: parseDateCell(raw[BASE.ewayBillDt]),
-      sellerName: toStr(raw[BASE.sellerName]),
-      buyerName: toStr(raw[BASE.buyerName]),
-      buyerAddress: toStr(raw[BASE.buyerAddr]),
-      consigneeName: toStr(raw[BASE.consignee]),
-      consigneeAddress: toStr(raw[BASE.consAddr]),
-      poNo: toStr(raw[BASE.poNo]),
+      invoiceDate: parseDateCell(raw[base.invoiceDt]),
+      ewayBillNo: toStr(raw[base.ewayBillNo]),
+      ewayBillDate: parseDateCell(raw[base.ewayBillDt]),
+      sellerName: toStr(raw[base.sellerName]),
+      buyerName: toStr(raw[base.buyerName]),
+      buyerAddress: toStr(raw[base.buyerAddr]),
+      consigneeName: toStr(raw[base.consignee]),
+      consigneeAddress: toStr(raw[base.consAddr]),
+      poNo: toStr(raw[base.poNo]),
       composition,
       count,
-      construction: toStr(raw[BASE.construction]),
-      gsm: toNum(raw[BASE.gsm]),
-      width: toNum(raw[BASE.width]),
-      certWeightKg: toNum(raw[BASE.certWt]),
-      grossWeightKg: toNum(raw[BASE.grossWt]),
-      netWeightKg: toNum(raw[BASE.netWt]),
-      quantity: toNum(raw[BASE.qty]),
-      uom: toStr(raw[BASE.uom]),
-      style: toStr(raw[BASE.style]),
-      shade: toStr(raw[BASE.shade]),
+      construction: toStr(raw[base.construction]),
+      gsm: toNum(raw[base.gsm]),
+      width: toNum(raw[base.width]),
+      certWeightKg: toNum(raw[base.certWt]),
+      grossWeightKg: toNum(raw[base.grossWt]),
+      netWeightKg: toNum(raw[base.netWt]),
+      quantity: toNum(raw[base.qty]),
+      uom: toStr(raw[base.uom]),
+      style: toStr(raw[base.style]),
+      shade: toStr(raw[base.shade]),
       recyclePercent,
       tcEntries,
       lossPercent,

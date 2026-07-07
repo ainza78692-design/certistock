@@ -186,6 +186,49 @@ describe("bulk saledump consumption", () => {
     });
   });
 
+
+  it("reads Composition by header when saledump columns shift", async () => {
+    const header = Array(30).fill("");
+    header[0] = "Invoice No.";
+    header[7] = "Buyer Name";
+    header[11] = "Composition";
+    header[12] = "Count";
+    header[17] = "C.Wt.";
+    header[18] = "GR.Wt.";
+    header[19] = "Nt.Wt.";
+    header[24] = "Recy%";
+    header[25] = "IDFL / Non IDFL";
+    header[26] = "TC Number";
+    header[27] = "Sheet";
+    header[28] = "C.wt";
+    header[29] = "Loss";
+
+    const row = Array(30).fill("");
+    row[0] = "GC01840/25";
+    row[7] = "ALPINE EXPO TEX PRIVATE LIMITED";
+    row[11] = "2616 65% recycle poly 35% cotton";
+    row[12] = "70D";
+    row[17] = 500;
+    row[25] = "Idfl";
+    row[26] = "IDF-25-790768";
+    row[27] = 2;
+    row[28] = 500;
+    row[29] = 2.1;
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([header, row]);
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+    const bytes = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    const file = {
+      name: "shifted-composition.xlsx",
+      arrayBuffer: async () => bytes,
+    } as File;
+
+    const parsed = await parseSaledumpFile(file);
+    expect(parsed.rows[0].composition).toBe("2616 65% recycle poly 35% cotton");
+    expect(parsed.rows[0].count).toBe("70D");
+  });
+
   it("calculates outward certified weight from Excel loss", () => {
     expect(calculateOutwardCertifiedWeight(220, 2.1)).toBe(215.38);
     expect(calculateOutwardCertifiedWeight(220, null)).toBe(220);

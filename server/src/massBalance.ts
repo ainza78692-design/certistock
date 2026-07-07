@@ -137,10 +137,7 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
     lot.material_composition,
   ]);
 
-  const outwardProductName = (value: string | null | undefined) => {
-    const cleaned = cleanCompositionForMassBalance(value);
-    return cleaned && cleaned !== inwardProductName ? cleaned : "";
-  };
+  const outwardProductName = (value: string | null | undefined) => cleanCompositionForMassBalance(value);
 
   const payload = {
     company_id: companyId,

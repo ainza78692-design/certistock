@@ -92,10 +92,7 @@ export default function NewConsumption() {
   }, [lots, lotSearch]);
 
   const lot = lots?.find((l: any) => l.id === lotId) as any;
-  
-  // Auto-populate composition when lot is selected
-  const lotComposition = lot?.material_composition || "";
-  const displayComposition = composition || lotComposition;
+  const displayComposition = composition;
 
   const consumedNum = Number(consumed || 0);
   const outwardCertNum = Number(outwardCert || consumed || 0);
@@ -225,7 +222,6 @@ export default function NewConsumption() {
                     key={l.id}
                     onClick={() => {
                       setLotId(l.id);
-                      setComposition(l.material_composition || "");
                     }}
                     className={`w-full text-left rounded-xl border p-3 transition-all duration-200 hover:border-primary/40 hover:bg-primary/[0.02] ${selected ? "border-primary/50 bg-primary/[0.04]" : "border-border"}`}
                   >
