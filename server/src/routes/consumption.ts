@@ -38,6 +38,13 @@ const consumptionSchema = z.object({
   allowDuplicatePair: z.boolean().optional().default(false),
 });
 
+const repairCompositionSchema = z.object({
+  rows: z.array(z.object({
+    outward_invoice_no: z.string().optional().nullable(),
+    transport_doc_no: z.string().optional().nullable(),
+    product_name: z.string().optional().nullable(),
+  })).default([]),
+});
 const bulkDeleteConsumptionSchema = z.object({
   pin: z.string().trim().min(1),
   ids: z.array(z.string().uuid()).optional().default([]),
@@ -205,6 +212,56 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, ...result, xlsx });
   });
 
+  app.post("/api/consumption/repair-compositions", { preHandler: requireUser }, async (request, reply) => {
+    const user = request.user!;
+    const input = repairCompositionSchema.parse(request.body || {});
+    const affectedLotIds = new Set<string>();
+    let updatedCount = 0;
+
+    await withTransaction(async (client) => {
+      for (const row of input.rows) {
+        const invoice = normalizeDuplicateField(row.outward_invoice_no);
+        const transportDoc = normalizeDuplicateField(row.transport_doc_no);
+        const composition = cleanCompositionForMassBalance(row.product_name);
+        if (!invoice || !transportDoc || !composition) continue;
+
+        const updated = await client.query<{ id: string }>(
+          `update outward_sales
+           set product_name = $4, updated_at = now()
+           where company_id = $1
+             and upper(btrim(coalesce(outward_invoice_no, ''))) = $2
+             and upper(btrim(coalesce(transport_doc_no, ''))) = $3
+           returning id`,
+          [user.companyId, invoice, transportDoc, composition],
+        );
+        updatedCount += updated.rowCount || 0;
+
+        for (const sale of updated.rows) {
+          const lotRows = await client.query<{ product_lot_id: string }>(
+            `select distinct product_lot_id
+             from consumption_entries
+             where company_id = $1 and outward_sale_id = $2`,
+            [user.companyId, sale.id],
+          );
+          for (const lotRow of lotRows.rows) affectedLotIds.add(lotRow.product_lot_id);
+        }
+      }
+      return null;
+    });
+
+    const regenerated: string[] = [];
+    const failed: { productLotId: string; error: string }[] = [];
+    for (const productLotId of affectedLotIds) {
+      try {
+        await renderAndStoreMassBalance(user.companyId, productLotId);
+        regenerated.push(productLotId);
+      } catch (error) {
+        failed.push({ productLotId, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    return reply.send({ ok: true, updatedCount, regeneratedCount: regenerated.length, failed });
+  });
   const bulkDeleteConsumption = async (request: any, reply: any) => {
     const user = request.user!;
     const input = bulkDeleteConsumptionSchema.parse(request.body || {});

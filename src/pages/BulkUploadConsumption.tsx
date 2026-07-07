@@ -42,7 +42,7 @@ export default function BulkUploadConsumption() {
   const {
     step, parsed, lines, lots, stats, processing, processedCount, processableCount,
     handleFile, toggleSkip, updateLot, updateWeight, processAll, reset,
-    pendingDuplicateConfirmation, confirmDuplicateProcessing, cancelDuplicateProcessing,
+    pendingDuplicateConfirmation, confirmDuplicateProcessing, cancelDuplicateProcessing, repairDuplicateCompositions,
   } = useBulkConsumption();
 
   const onFile = useCallback(async (file: File | undefined) => {
@@ -51,6 +51,18 @@ export default function BulkUploadConsumption() {
     catch (e: any) { toast.error(e.message || "Failed to parse file"); }
   }, [handleFile]);
 
+  const repairCompositions = useCallback(async () => {
+    try {
+      const result = await repairDuplicateCompositions();
+      if (result.failed?.length) {
+        toast.warning(`Updated ${result.updatedCount || 0} row(s), but ${result.failed.length} Mass Balance file(s) failed to regenerate`);
+      } else {
+        toast.success(`Updated ${result.updatedCount || 0} composition row(s) and regenerated ${result.regeneratedCount || 0} Mass Balance file(s)`);
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Could not repair existing compositions");
+    }
+  }, [repairDuplicateCompositions]);
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     onFile(e.dataTransfer.files?.[0]);
@@ -107,6 +119,7 @@ export default function BulkUploadConsumption() {
           <div className="flex gap-2">
             {isDone && <Button variant="outline" className="rounded-xl gap-2" onClick={() => navigate("/consumption")}><CheckCircle2 className="h-4 w-4" />View consumption</Button>}
             {(isDone || step === "review") && <Button variant="outline" className="rounded-xl gap-2" onClick={reset}><RotateCcw className="h-4 w-4" />New upload</Button>}
+            {step === "review" && stats.duplicate > 0 && <Button variant="outline" className="rounded-xl gap-2" onClick={repairCompositions}>Repair duplicate compositions</Button>}
             {step === "review" && (
               <Button className="rounded-xl gap-2 shadow-sm" disabled={processableCount === 0} onClick={processAll}>
                 <Sparkles className="h-4 w-4" />Process {processableCount} matched rows

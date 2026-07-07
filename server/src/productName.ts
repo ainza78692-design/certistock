@@ -9,6 +9,24 @@ export function cleanCompositionForMassBalance(value: string | null | undefined)
 /**
  * Existing inward/product-name cleanup. Kept separate so inward data behavior stays unchanged.
  */
+
+const normalizeComparableName = (value: string | null | undefined) =>
+  cleanCompositionForMassBalance(value).toUpperCase();
+
+export function outwardProductNameForMassBalance(input: {
+  storedProductName?: string | null;
+  inwardProductName?: string | null;
+  lotMaterialComposition?: string | null;
+}): string {
+  const stored = cleanCompositionForMassBalance(input.storedProductName);
+  const inward = cleanCompositionForMassBalance(input.inwardProductName);
+
+  if (stored && normalizeComparableName(stored) !== normalizeComparableName(inward)) {
+    return stored;
+  }
+
+  return cleanCompositionForMassBalance(input.lotMaterialComposition);
+}
 function cleanProductNamePart(name: string | null | undefined): string {
   if (!name) return "";
 
