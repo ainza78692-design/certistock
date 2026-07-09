@@ -51,7 +51,7 @@ if (-not (Test-Path "server/.env")) {
   @"
 DATABASE_URL=$DatabaseUrl
 JWT_SECRET=$jwt
-JWT_EXPIRES_IN=12h
+JWT_EXPIRES_IN=3650d
 LOCAL_API_HOST=0.0.0.0
 LOCAL_API_PORT=8787
 FILE_STORAGE_ROOT=./data/files
