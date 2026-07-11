@@ -340,10 +340,15 @@ create table if not exists public.consumption_entries (
   loss_weight_kg numeric(14,3),
   loss_percent numeric(8,3),
   consumption_date date default current_date,
+  import_batch_id uuid,
+  imported_row_index integer,
+  imported_at timestamptz,
+  entry_sequence bigint,
   remarks text,
   created_by uuid references public.profiles(id),
   created_at timestamptz not null default now()
 );
+
 
 create table if not exists public.stock_ledger (
   id uuid primary key default gen_random_uuid(),
@@ -519,7 +524,14 @@ begin
     select *
     from public.consumption_entries
     where product_lot_id = lot.id and company_id = _company_id
-    order by consumption_date asc nulls last, created_at asc, id asc
+    order by
+      consumption_date asc nulls last,
+      coalesce(imported_at, created_at) asc,
+      import_batch_id asc nulls last,
+      imported_row_index asc nulls last,
+      entry_sequence asc nulls last,
+      created_at asc,
+      id asc
   loop
     update public.consumption_entries
     set opening_balance_before_kg = running_balance,
@@ -590,6 +602,31 @@ create index if not exists idx_incoming_stock_shipment_date on public.incoming_s
 create index if not exists idx_incoming_stock_yarn on public.incoming_stock(company_id, normalized_yarn_key);
 create index if not exists idx_ce_company_date on public.consumption_entries(company_id, consumption_date);
 create index if not exists idx_ce_lot on public.consumption_entries(product_lot_id);
+
+alter table public.consumption_entries add column if not exists import_batch_id uuid;
+alter table public.consumption_entries add column if not exists imported_row_index integer;
+alter table public.consumption_entries add column if not exists imported_at timestamptz;
+alter table public.consumption_entries add column if not exists entry_sequence bigint;
+create sequence if not exists public.consumption_entries_entry_sequence_seq;
+alter table public.consumption_entries
+  alter column entry_sequence set default nextval('public.consumption_entries_entry_sequence_seq'::regclass);
+alter sequence public.consumption_entries_entry_sequence_seq owned by public.consumption_entries.entry_sequence;
+with ordered_entries as (
+  select id, row_number() over (order by consumption_date asc nulls last, created_at asc, id asc) as rn
+  from public.consumption_entries
+  where entry_sequence is null
+)
+update public.consumption_entries ce
+set entry_sequence = ordered_entries.rn
+from ordered_entries
+where ce.id = ordered_entries.id;
+select setval(
+  'public.consumption_entries_entry_sequence_seq',
+  greatest((select coalesce(max(entry_sequence), 0) from public.consumption_entries), 1),
+  true
+);
+create index if not exists idx_ce_mass_balance_order
+  on public.consumption_entries(company_id, product_lot_id, consumption_date, imported_at, created_at, import_batch_id, imported_row_index, entry_sequence);
 create index if not exists idx_sl_company on public.stock_ledger(company_id);
 create index if not exists idx_sl_lot on public.stock_ledger(product_lot_id);
 create index if not exists idx_mass_balance_lot on public.mass_balance_workbooks(product_lot_id);

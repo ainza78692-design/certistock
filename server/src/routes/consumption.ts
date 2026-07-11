@@ -5,7 +5,8 @@ import { requireUser } from "../auth.js";
 import { query, withTransaction } from "../db.js";
 import { renderAndStoreMassBalance } from "../massBalance.js";
 import { cleanupUnusedCustomers } from "../entityCleanup.js";
-import { cleanCompositionForMassBalance } from "../productName.js";
+import { buildCombinedProductName } from "../productName.js";
+import { cleanCompositionName } from "../compositionName.js";
 
 const consumptionSchema = z.object({
   productLotId: z.string().uuid(),
@@ -14,8 +15,11 @@ const consumptionSchema = z.object({
   customerName: z.string().optional().nullable(),
   newCustomer: z.string().optional().nullable(),
   consumptionDate: z.string().optional().nullable(),
+  lossPercent: z.coerce.number().min(0).max(100).optional().nullable(),
+  importBatchId: z.string().uuid().optional().nullable(),
+  importedRowIndex: z.coerce.number().int().positive().optional().nullable(),
+  importedAt: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
-  composition: z.string().optional().nullable(),
   outwardSale: z.object({
     outward_invoice_no: z.string().optional().nullable(),
     outward_invoice_date: z.string().optional().nullable(),
@@ -128,14 +132,19 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
 
       if (!customerId && !customerName) throw new Error("Customer required");
 
-      const outwardCertified = Number(
-        input.outwardCertifiedWeightKg
-        ?? input.outwardSale.outward_certified_weight_kg
-        ?? input.consumedWeightKg,
-      );
-      const outwardComposition = cleanCompositionForMassBalance(
-        input.outwardSale.product_name || input.composition || null,
-      );
+      const requestedLossPercent = input.lossPercent == null ? null : Number(input.lossPercent);
+      const explicitOutwardCertified = input.outwardCertifiedWeightKg ?? input.outwardSale.outward_certified_weight_kg ?? null;
+      const calculatedOutwardCertified = requestedLossPercent == null
+        ? input.consumedWeightKg
+        : input.consumedWeightKg * (1 - requestedLossPercent / 100);
+      const outwardCertified = Number(explicitOutwardCertified ?? calculatedOutwardCertified);
+      const combinedProductName = buildCombinedProductName([
+        lot.product_category,
+        lot.product_detail,
+        lot.material_composition,
+      ]);
+      const requestedProductName = cleanCompositionName(input.outwardSale.product_name);
+      const fallbackProductName = cleanCompositionName(combinedProductName || lot.additional_info_raw);
 
       const sale = await client.query<any>(
         `insert into outward_sales(
@@ -152,7 +161,7 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
           input.outwardSale.outward_invoice_date || input.invoiceDate || input.consumptionDate || null,
           input.outwardSale.outward_tc_no || null,
           customerName,
-          outwardComposition || null,
+          requestedProductName || fallbackProductName || null,
           input.outwardSale.normalized_yarn_key || lot.normalized_yarn_key || null,
           input.outwardSale.outward_net_weight_kg ?? input.outwardNetWeightKg ?? null,
           input.outwardSale.outward_gross_weight_kg ?? input.outwardGrossWeightKg ?? null,
@@ -177,17 +186,25 @@ export async function registerConsumptionRoutes(app: FastifyInstance) {
         ],
       );
 
-      if (input.consumptionDate) {
-        await client.query(
-          `update consumption_entries
-           set consumption_date = $1
-           where id = $2 and company_id = $3`,
-          [input.consumptionDate, consumption.rows[0].id, user.companyId],
-        );
-        consumption.rows[0].consumption_date = input.consumptionDate;
-      }
+      const consumptionMeta = await client.query<any>(
+        `update consumption_entries
+         set consumption_date = coalesce($1, consumption_date),
+             import_batch_id = $2,
+             imported_row_index = $3,
+             imported_at = $4
+         where id = $5 and company_id = $6
+         returning *`,
+        [
+          input.consumptionDate || null,
+          input.importBatchId || null,
+          input.importedRowIndex ?? null,
+          input.importedAt || null,
+          consumption.rows[0].id,
+          user.companyId,
+        ],
+      );
 
-      return { consumption: consumption.rows[0], outwardSale: sale.rows[0] };
+      return { consumption: consumptionMeta.rows[0] ?? consumption.rows[0], outwardSale: sale.rows[0] };
     });
 
     let xlsx = { status: "ready", error: null as string | null, workbook: null as any };

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,6 +16,7 @@ import { fmtDate, fmtKg } from "@/lib/format";
 import { toast } from "sonner";
 import { Loader2, AlertTriangle, Search, CheckCircle2, FileSpreadsheet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { cleanCompositionName } from "@/lib/compositionName";
 
 export default function NewConsumption() {
   const navigate = useNavigate();
@@ -36,6 +37,7 @@ export default function NewConsumption() {
   const [vehicleNo, setVehicleNo] = useState("");
   const [composition, setComposition] = useState("");
   const [consumed, setConsumed] = useState("");
+  const [lossPercent, setLossPercent] = useState("");
   const [outwardNet, setOutwardNet] = useState("");
   const [outwardGross, setOutwardGross] = useState("");
   const [outwardCert, setOutwardCert] = useState("");
@@ -52,7 +54,7 @@ export default function NewConsumption() {
       }
 
       const { data } = await supabase.from("product_lots")
-        .select("id, normalized_yarn_key, article_no, additional_info_raw, certified_weight_kg, remaining_stock_kg, material_composition, transaction_certificates(tc_number), shipments(shipment_no, shipment_date)")
+        .select("id, normalized_yarn_key, article_no, additional_info_raw, product_category, product_detail, material_composition, certified_weight_kg, remaining_stock_kg, transaction_certificates(tc_number), shipments(shipment_no, shipment_date)")
         .eq("company_id", cid!).eq("status", "active").gt("remaining_stock_kg", 0)
         .order("created_at", { ascending: false });
       return data || [];
@@ -92,10 +94,24 @@ export default function NewConsumption() {
   }, [lots, lotSearch]);
 
   const lot = lots?.find((l: any) => l.id === lotId) as any;
-  const displayComposition = composition;
+  const defaultComposition = useMemo(() => cleanCompositionName(
+    lot?.material_composition
+    || lot?.additional_info_raw
+    || [lot?.product_category, lot?.product_detail].filter(Boolean).join(" "),
+  ), [lot?.material_composition, lot?.additional_info_raw, lot?.product_category, lot?.product_detail]);
+
+  useEffect(() => {
+    setComposition(defaultComposition);
+  }, [lotId, defaultComposition]);
 
   const consumedNum = Number(consumed || 0);
-  const outwardCertNum = Number(outwardCert || consumed || 0);
+  const requestedLossPct = lossPercent.trim() === "" ? null : Number(lossPercent);
+  const hasValidLossPct = requestedLossPct !== null && Number.isFinite(requestedLossPct) && requestedLossPct >= 0 && requestedLossPct <= 100;
+  const outwardCertNum = outwardCert.trim() !== ""
+    ? Number(outwardCert)
+    : hasValidLossPct
+      ? Number((consumedNum * (1 - requestedLossPct / 100)).toFixed(3))
+      : Number(consumed || 0);
   const remaining = Number(lot?.remaining_stock_kg || 0);
   const closing = remaining - consumedNum;
   const lossKg = consumedNum - outwardCertNum;
@@ -107,6 +123,7 @@ export default function NewConsumption() {
     if (!cid || !lotId) return toast.error("Select a lot");
     if (!consumedNum || consumedNum <= 0) return toast.error("Enter consumed weight");
     if (overConsume) return toast.error("Cannot exceed remaining stock");
+    if (requestedLossPct !== null && !hasValidLossPct) return toast.error("Loss % must be between 0 and 100");
     if (!customerId && !newCustomer) return toast.error("Customer required");
     setSaving(true);
     try {
@@ -119,13 +136,13 @@ export default function NewConsumption() {
             newCustomer: newCustomer || null,
             consumedWeightKg: consumedNum,
             consumptionDate: consumptionDate || null,
+            lossPercent: hasValidLossPct ? requestedLossPct : null,
             remarks: remarks || null,
-            composition: displayComposition || null,
             outwardSale: {
               outward_invoice_no: invoiceNo || null,
               outward_invoice_date: invoiceDate || null,
               outward_tc_no: outwardTc || null,
-              product_name: displayComposition || null,
+              product_name: cleanCompositionName(composition) || null,
               normalized_yarn_key: lot?.normalized_yarn_key || null,
               outward_net_weight_kg: outwardNet ? Number(outwardNet) : null,
               outward_gross_weight_kg: outwardGross ? Number(outwardGross) : null,
@@ -153,13 +170,13 @@ export default function NewConsumption() {
           newCustomer: newCustomer || null,
           consumedWeightKg: consumedNum,
           consumptionDate: consumptionDate || null,
+          lossPercent: hasValidLossPct ? requestedLossPct : null,
           remarks: remarks || null,
-          composition: displayComposition || null,
           outwardSale: {
             outward_invoice_no: invoiceNo || null,
             outward_invoice_date: invoiceDate || null,
             outward_tc_no: outwardTc || null,
-            product_name: displayComposition || null,
+            product_name: cleanCompositionName(composition) || null,
             normalized_yarn_key: lot?.normalized_yarn_key || null,
             outward_net_weight_kg: outwardNet ? Number(outwardNet) : null,
             outward_gross_weight_kg: outwardGross ? Number(outwardGross) : null,
@@ -220,10 +237,8 @@ export default function NewConsumption() {
                   <button
                     type="button"
                     key={l.id}
-                    onClick={() => {
-                      setLotId(l.id);
-                    }}
-                    className={`w-full text-left rounded-xl border p-3 transition-all duration-200 hover:border-primary/40 hover:bg-primary/[0.02] ${selected ? "border-primary/50 bg-primary/[0.04]" : "border-border"}`}
+                    onClick={() => setLotId(l.id)}
+                    className={`w-full text-left rounded-xl border p-3 transition-all duration-200 hover:border-primary/40 hover:bg-primary/[0.02] ${selected ? "border-primary/50 bg-primary/[0.04]" : "border-border/60 bg-background"}`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -271,13 +286,16 @@ export default function NewConsumption() {
                   <SelectTrigger><SelectValue placeholder="Select existing customer" /></SelectTrigger>
                   <SelectContent>{customers?.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.customer_name}</SelectItem>)}</SelectContent>
                 </Select>
-                <Input placeholder="…or type a new customer name" value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)} />
+                <Input placeholder="...or type a new customer name" value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)} />
               </div>
               <Field label="Invoice no." value={invoiceNo} onChange={setInvoiceNo} />
               <Field label="Invoice date" type="date" value={invoiceDate} onChange={setInvoiceDate} />
               <Field label="Consumption date" type="date" value={consumptionDate} onChange={setConsumptionDate} />
               <Field label="Outward TC no." value={outwardTc} onChange={setOutwardTc} />
-              <Field label="Composition" value={displayComposition} onChange={setComposition} placeholder="e.g., 100% Polyester" />
+              <div className="space-y-1.5 col-span-2">
+                <Label className="text-xs">Composition</Label>
+                <Input value={composition} onChange={(e) => setComposition(e.target.value)} placeholder="Composition / product name for MBS" />
+              </div>
               <Field label="Destination" value={destination} onChange={setDestination} />
               <Field label="Transport doc" value={transportDoc} onChange={setTransportDoc} />
               <Field label="Vehicle no." value={vehicleNo} onChange={setVehicleNo} />
@@ -288,6 +306,7 @@ export default function NewConsumption() {
             <h3 className="text-sm font-semibold">Weights</h3>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Consumed weight (kg) *" type="number" value={consumed} onChange={setConsumed} />
+              <Field label="Loss %" type="number" value={lossPercent} onChange={setLossPercent} />
               <Field label="Outward certified (kg)" type="number" value={outwardCert} onChange={setOutwardCert} />
               <Field label="Outward net (kg)" type="number" value={outwardNet} onChange={setOutwardNet} />
               <Field label="Outward gross (kg)" type="number" value={outwardGross} onChange={setOutwardGross} />
@@ -308,7 +327,7 @@ export default function NewConsumption() {
               <Row label="Closing" value={<span className={overConsume ? "text-destructive font-medium" : "font-medium"}>{fmtKg(closing, 3)}</span>} />
               <div className="border-t pt-3" />
               <Row label="Outward certified" value={fmtKg(outwardCertNum, 3)} />
-              <Row label="Loss" value={`${fmtKg(lossKg, 3)} · ${lossPct.toFixed(2)}%`} />
+              <Row label="Loss" value={`${fmtKg(lossKg, 3)} - ${lossPct.toFixed(2)}%`} />
             </dl>
             {overConsume && (
               <div className="mt-4 flex items-start gap-2 p-3 rounded-lg bg-destructive-muted text-destructive text-xs">
@@ -317,7 +336,7 @@ export default function NewConsumption() {
             )}
             {lossPct > 5 && consumedNum > 0 && !overConsume && (
               <div className="mt-4 flex items-start gap-2 p-3 rounded-lg bg-warning-muted text-warning-foreground/80 text-xs">
-                <AlertTriangle className="h-4 w-4 shrink-0" /> Loss above 5% — please verify weights.
+                <AlertTriangle className="h-4 w-4 shrink-0" /> Loss above 5% - please verify weights.
               </div>
             )}
             <Button type="submit" className="w-full mt-4" disabled={saving || overConsume}>
@@ -330,13 +349,13 @@ export default function NewConsumption() {
   );
 }
 
-const Field = ({ label, value, onChange, type = "text", placeholder }: any) => (
+const Field = ({ label, value, onChange, type = "text" }: any) => (
   <div className="space-y-1.5">
     <Label className="text-xs">{label}</Label>
     {type === "date" ? (
       <DatePicker value={value} onChange={onChange} />
     ) : (
-      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} />
     )}
   </div>
 );

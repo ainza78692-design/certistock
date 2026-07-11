@@ -1,6 +1,6 @@
 import { config } from "./config.js";
 import { query } from "./db.js";
-import { buildCombinedProductName, cleanCompositionForMassBalance } from "./productName.js";
+import { buildCombinedProductName } from "./productName.js";
 import { buckets, buildMassBalanceStoragePath, massBalanceFileName, writeStoredFile } from "./storage.js";
 
 function toNumber(value: unknown): number | null {
@@ -91,20 +91,18 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
        sh.consignee_name,
        sh.consignee_address,
        sh.consignee_te_id
-      from product_lots l
-      left join transaction_certificates tc on tc.id = l.transaction_certificate_id
-      left join suppliers s on s.id = tc.supplier_id
-      left join shipments sh on sh.id = l.shipment_id
-      where l.company_id = $1 and l.id = $2
-      limit 1`,
+     from product_lots l
+     left join transaction_certificates tc on tc.id = l.transaction_certificate_id
+     left join suppliers s on s.id = tc.supplier_id
+     left join shipments sh on sh.id = l.shipment_id
+     where l.company_id = $1 and l.id = $2
+     limit 1`,
     [companyId, productLotId],
   );
 
   const lot: any = lotResult.rows[0];
   if (!lot) throw new Error("Product lot not found");
 
-  // CRITICAL: Maintain strict chronological order for MBS export
-  // Primary sort: consumption_date (earliest first), then by created_at (entry creation order)
   const entries = await query(
     `select
        ce.id,
@@ -122,22 +120,20 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
        os.outward_gross_weight_kg,
        os.transport_doc_no,
        os.vehicle_no,
-       os.destination,
-       ce.created_at
-      from consumption_entries ce
-      left join outward_sales os on os.id = ce.outward_sale_id
-      where ce.company_id = $1 and ce.product_lot_id = $2
-      order by ce.consumption_date asc nulls last, ce.created_at asc, ce.id asc`,
+       os.destination
+     from consumption_entries ce
+     left join outward_sales os on os.id = ce.outward_sale_id
+     where ce.company_id = $1 and ce.product_lot_id = $2
+     order by
+       ce.consumption_date asc nulls last,
+       coalesce(ce.imported_at, ce.created_at) asc,
+       ce.import_batch_id asc nulls last,
+       ce.imported_row_index asc nulls last,
+       ce.entry_sequence asc nulls last,
+       ce.created_at asc,
+       ce.id asc`,
     [companyId, productLotId],
   );
-
-  const inwardProductName = buildCombinedProductName([
-    lot.product_category,
-    lot.product_detail,
-    lot.material_composition,
-  ]);
-
-  const outwardProductName = (value: string | null | undefined) => cleanCompositionForMassBalance(value);
 
   const payload = {
     company_id: companyId,
@@ -165,7 +161,11 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
     lot: {
       id: lot.id,
       normalized_yarn_key: lot.normalized_yarn_key ?? null,
-      product_name: inwardProductName,
+      product_name: buildCombinedProductName([
+        lot.product_category,
+        lot.product_detail,
+        lot.material_composition,
+      ]),
       article_no: lot.article_no ?? null,
       product_no: lot.product_no ?? null,
       number_of_units: lot.number_of_units ?? null,
@@ -192,7 +192,7 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
         outward_invoice_date: entry.outward_invoice_date,
         outward_tc_no: entry.outward_tc_no,
         customer_name_snapshot: entry.customer_name_snapshot,
-        product_name: outwardProductName(entry.product_name),
+        product_name: entry.product_name,
         outward_net_weight_kg: entry.outward_net_weight_kg,
         outward_gross_weight_kg: entry.outward_gross_weight_kg,
         outward_certified_weight_kg: entry.outward_certified_weight_kg,
@@ -280,4 +280,3 @@ export async function renderAndStoreMassBalance(companyId: string, productLotId:
     throw error;
   }
 }
-

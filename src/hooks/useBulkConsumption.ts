@@ -6,6 +6,7 @@ import { isLocalBackend } from "@/lib/backendMode";
 import { localApi } from "@/lib/localApi";
 import { buildBulkLotLabel, findLotByTcShipment } from "@/lib/bulkConsumptionMatching";
 import { parseSaledumpFile, ParsedSaledump, SaledumpRow, TcConsumptionTarget } from "@/lib/parseSaledump";
+import { cleanCompositionName } from "@/lib/compositionName";
 
 export type MatchStatus = "matched" | "partial" | "ambiguous" | "unmatched" | "duplicate" | "skipped" | "done" | "error";
 
@@ -35,6 +36,14 @@ export interface ConsumptionLine {
 
 export type BulkStep = "upload" | "review" | "processing" | "done";
 
+const createUuid = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const value = Math.floor(Math.random() * 16);
+    const digit = char === "x" ? value : (value & 0x3) | 0x8;
+    return digit.toString(16);
+  });
+};
 export function calculateOutwardCertifiedWeight(consumedWeightKg: number, lossPercent?: number | null): number {
   const consumed = Number(consumedWeightKg);
   const loss = Number(lossPercent);
@@ -288,6 +297,8 @@ export function useBulkConsumption() {
     setProcessedCount(0);
 
     const toProcess = sourceLines.filter(l => l.status === "matched" && l.lotId);
+    const importBatchId = createUuid();
+    const importedAt = new Date().toISOString();
     const batchDuplicateCounts = toProcess.reduce((counts, line) => {
       if (!line.duplicateKey) return counts;
       counts.set(line.duplicateKey, (counts.get(line.duplicateKey) || 0) + 1);
@@ -307,6 +318,10 @@ export function useBulkConsumption() {
               newCustomer: !line.customerId ? line.customerName : null,
               consumedWeightKg: line.consumedWeightKg,
               consumptionDate: line.invoiceDate || null,
+              lossPercent: line.lossPercent ?? null,
+              importBatchId,
+              importedRowIndex: i + 1,
+              importedAt,
               remarks: `Bulk import: ${line.invoiceNo}${line.tcEntry ? " - TC " + line.tcEntry.tcNumber : ""}`,
               outwardSale: {
                 outward_invoice_no: line.invoiceNo || null,
@@ -316,7 +331,7 @@ export function useBulkConsumption() {
                 outward_certified_weight_kg: line.outwardCertifiedWeightKg,
                 transport_doc_no: line.ewayBillNo || null,
                 destination: line.sourceRow.consigneeName || null,
-                product_name: line.sourceRow.composition || null,
+                product_name: cleanCompositionName(line.sourceRow.composition) || null,
                 normalized_yarn_key: line.sourceRow.normalizedYarnKey || null,
               },
               allowDuplicatePair: allowPairForLine,
@@ -336,6 +351,10 @@ export function useBulkConsumption() {
             newCustomer: !line.customerId ? line.customerName : null,
             consumedWeightKg: line.consumedWeightKg,
             consumptionDate: line.invoiceDate || null,
+            lossPercent: line.lossPercent ?? null,
+            importBatchId,
+            importedRowIndex: i + 1,
+            importedAt,
             remarks: `Bulk import: ${line.invoiceNo}${line.tcEntry ? " - TC " + line.tcEntry.tcNumber : ""}`,
             outwardSale: {
               outward_invoice_no: line.invoiceNo || null,
@@ -345,7 +364,7 @@ export function useBulkConsumption() {
               outward_certified_weight_kg: line.outwardCertifiedWeightKg,
               transport_doc_no: line.ewayBillNo || null,
               destination: line.sourceRow.consigneeName || null,
-              product_name: line.sourceRow.composition || null,
+              product_name: cleanCompositionName(line.sourceRow.composition) || null,
               normalized_yarn_key: line.sourceRow.normalizedYarnKey || null,
             },
             allowDuplicatePair: allowPairForLine,
