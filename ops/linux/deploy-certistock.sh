@@ -77,6 +77,17 @@ echo "Removing non-server Windows/Electron artifacts..."
 find "$APP_DIR" -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" \) -delete
 rm -rf "$APP_DIR/dist-electron" "$APP_DIR/release"
 
+if compgen -G "$APP_DIR/server/updates/installer-parts/*.part000" > /dev/null; then
+  echo "Reassembling CertiStock update installers..."
+  mkdir -p "$APP_DIR/server/updates"
+  for first_part in "$APP_DIR"/server/updates/installer-parts/*.part000; do
+    installer_name="$(basename "$first_part" .part000)"
+    target_path="$APP_DIR/server/updates/$installer_name"
+    cat "$APP_DIR/server/updates/installer-parts/$installer_name".part* > "$target_path"
+    chown certistock:certistock "$target_path" || true
+  done
+fi
+
 echo "Recording deployment history..."
 echo "$(date +%Y-%m-%d_%H:%M:%S) - $(git rev-parse HEAD)" >> "$DEPLOY_HISTORY"
 
