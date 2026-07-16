@@ -1,7 +1,7 @@
 {
   "name": "stockguard-pro",
   "private": true,
-  "version": "1.0.25",
+  "version": "1.0.26",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -130,9 +130,18 @@
       }
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        "nsis",
+        "appx"
+      ],
       "artifactName": "CertiStock Setup ${version}.${ext}",
       "signAndEditExecutable": false
+    },
+    "appx": {
+      "publisher": "CN=Mohammad Anas",
+      "publisherDisplayName": "Mohammad Anas",
+      "identityName": "Certistockai",
+      "applicationId": "Certistockai"
     },
     "nsis": {
       "oneClick": false,
