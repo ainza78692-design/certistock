@@ -120,9 +120,14 @@ chown -R certistock:certistock "$PM2_HOME_DIR"
 sudo -u certistock env HOME="$APP_DIR" PM2_HOME="$PM2_HOME_DIR" bash -lc "set -a; source '$APP_DIR/.env'; set +a; pm2 startOrReload ecosystem.config.cjs --update-env"
 sudo -u certistock env HOME="$APP_DIR" PM2_HOME="$PM2_HOME_DIR" pm2 save
 
+# Force hard restart of OCR worker — it binds to a fixed port (8001) so graceful
+# reload causes "address already in use" crash-loops (new process starts before old
+# one releases the port). A hard restart kills the old process first, then starts fresh.
 echo "Restarting OCR worker if present..."
 if systemctl list-unit-files | grep -q '^certistock-ocr.service'; then
   systemctl restart certistock-ocr.service || true
+else
+  sudo -u certistock env HOME="$APP_DIR" PM2_HOME="$PM2_HOME_DIR" pm2 restart certistock-ocr || true
 fi
 
 echo "Running health check..."
