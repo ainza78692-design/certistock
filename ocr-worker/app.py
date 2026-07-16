@@ -398,9 +398,10 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
     opening_stk = number_value(payload.lot.get("opening_stock_kg"))
     standard    = payload.tc.get("standard") or ""
     START       = 6
-    END_ROW     = 35
+    # Support up to 200 consumption rows — no arbitrary cap
+    END_ROW     = START + max(len(consumptions) - 1, 29)  # at least 30 rows, grows with data
     max_rows    = END_ROW - START + 1
-    row_count   = min(len(consumptions), max_rows)
+    row_count   = len(consumptions)  # include ALL entries, no truncation
 
     for r in range(START, END_ROW + 1):
         idx = r - START
@@ -408,9 +409,9 @@ def render_mass_balance(payload: MassBalanceRequest, authorization: str | None =
         entry = consumptions[idx] if has_entry else {}
         sale = entry.get("outward_sale") or {}
 
-        # Row heights matching reference exactly
-        if   idx < 8:  ws.row_dimensions[r].height = 100.0
-        elif idx < 14: ws.row_dimensions[r].height = 45.0
+        # Row heights: first 8 rows tall (many-line customer names), next 6 medium, rest compact
+        if   idx < 8:  ws.row_dimensions[r].height = 45.0
+        elif idx < 14: ws.row_dimensions[r].height = 30.0
         else:          ws.row_dimensions[r].height = 16.5
 
         for col in range(1, 22):
