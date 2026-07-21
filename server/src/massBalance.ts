@@ -125,7 +125,6 @@ export async function buildMassBalancePayload(companyId: string, productLotId: s
      left join outward_sales os on os.id = ce.outward_sale_id
      where ce.company_id = $1 and ce.product_lot_id = $2
      order by
-       ce.consumption_date asc nulls last,
        coalesce(ce.imported_at, ce.created_at) asc,
        ce.import_batch_id asc nulls last,
        ce.imported_row_index asc nulls last,
