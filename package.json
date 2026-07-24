@@ -138,10 +138,10 @@
       "signAndEditExecutable": false
     },
     "appx": {
-      "publisher": "CN=Mohammad Anas",
+      "publisher": "CN=14365A28-E0A8-4521-ADE0-6AEA931FA68C",
       "publisherDisplayName": "Mohammad Anas",
-      "identityName": "Certistockai",
-      "applicationId": "Certistockai"
+      "identityName": "MohammadAnas.Certistock",
+      "applicationId": "Certistock"
     },
     "nsis": {
       "oneClick": false,

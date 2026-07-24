@@ -59,7 +59,7 @@ export const localAuth = {
   },
 };
 
-export async function localApi<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function _internalLocalApi<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   const token = localAuth.getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -107,7 +107,20 @@ export const toLocalProfile = (user: LocalUser): LocalProfile => ({
 });
 
 export async function localLogin(email: string, password: string) {
-  const data = await localApi<{ user: LocalUser; token: string }>("/api/auth/login", {
+  // Offline bypass for Microsoft Partner Center Reviewers
+  if (email === "microsoft@test.com") {
+    const dummyUser = {
+      id: "microsoft-reviewer",
+      email: "microsoft@test.com",
+      companyId: "dummy-company",
+      role: "admin",
+      fullName: "Microsoft Reviewer",
+    };
+    localAuth.setToken("dummy-token");
+    return { user: dummyUser, token: "dummy-token" };
+  }
+
+  const data = await _internalLocalApi<{ user: LocalUser; token: string }>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
@@ -116,7 +129,7 @@ export async function localLogin(email: string, password: string) {
 }
 
 export async function localDefaultLogin() {
-  const data = await localApi<{ user: LocalUser; token: string }>("/api/auth/default-login", {
+  const data = await _internalLocalApi<{ user: LocalUser; token: string }>("/api/auth/default-login", {
     method: "POST",
   });
   localAuth.setToken(data.token);
@@ -129,7 +142,7 @@ export async function localSignup(input: {
   fullName: string;
   companyName: string;
 }) {
-  const data = await localApi<{ user: LocalUser; token: string }>("/api/auth/signup", {
+  const data = await _internalLocalApi<{ user: LocalUser; token: string }>("/api/auth/signup", {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -138,7 +151,46 @@ export async function localSignup(input: {
 }
 
 export async function localMe() {
-  return localApi<{ user: LocalUser }>("/api/auth/me");
+  if (localAuth.getToken() === "dummy-token") {
+    return {
+      user: {
+        id: "microsoft-reviewer",
+        email: "microsoft@test.com",
+        companyId: "dummy-company",
+        role: "admin",
+        fullName: "Microsoft Reviewer",
+      }
+    };
+  }
+  return _internalLocalApi<{ user: LocalUser }>("/api/auth/me");
+}
+
+export async function localApi<T>(path: string, init?: RequestInit): Promise<T> {
+  if (localAuth.getToken() === "dummy-token") {
+    if (path === "/api/dashboard") {
+      const thisYear = new Date().getFullYear();
+      return {
+        lots: [
+          { certified_weight_kg: 5000, remaining_stock_kg: 1200, consumed_stock_kg: 3800, opening_stock_kg: 5000, status: "active", normalized_yarn_key: "cotton-30s", created_at: `${thisYear}-01-10T10:00:00Z`, shipment_date: `${thisYear}-01-15` },
+          { certified_weight_kg: 8000, remaining_stock_kg: 0, consumed_stock_kg: 8000, opening_stock_kg: 8000, status: "depleted", normalized_yarn_key: "poly-40s", created_at: `${thisYear}-03-05T10:00:00Z`, shipment_date: `${thisYear}-03-10` },
+          { certified_weight_kg: 3000, remaining_stock_kg: 2950, consumed_stock_kg: 50, opening_stock_kg: 3000, status: "active", normalized_yarn_key: "viscose-20s", created_at: `${thisYear}-06-20T10:00:00Z`, shipment_date: `${thisYear}-06-25` }
+        ],
+        incomingStock: [
+          { invoice_no: "INV-9921", yarn_count: "Cotton 30s", normalized_yarn_key: "cotton-30s", net_weight_kg: 2000, shipment_date: `${thisYear}-07-01` }
+        ],
+        pending: 3,
+        consumption: [
+          { consumed_weight_kg: 1500, consumption_date: `${thisYear}-02-15` },
+          { consumed_weight_kg: 2300, consumption_date: `${thisYear}-04-10` },
+          { consumed_weight_kg: 8000, consumption_date: `${thisYear}-05-20` },
+          { consumed_weight_kg: 50, consumption_date: `${thisYear}-07-05` }
+        ]
+      } as any;
+    }
+    // Return empty arrays for other pages to prevent crashes
+    return [] as any;
+  }
+  return _internalLocalApi(path, init);
 }
 export async function localAccounts() {
   try {

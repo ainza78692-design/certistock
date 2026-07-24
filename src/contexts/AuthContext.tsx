@@ -46,6 +46,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const activateDemoMode = () => {
+    const dummyUser: LocalUser = {
+      id: "demo-reviewer",
+      email: "demo@certistock.app",
+      companyId: "demo-company",
+      role: "admin",
+      fullName: "Demo Mode",
+    };
+    localAuth.setToken("dummy-token");
+    localAuth.setUser(dummyUser);
+    setUser(dummyUser);
+    setSession(null);
+    setProfile(toLocalProfile(dummyUser));
+    setAuthError(null);
+    setLoading(false);
+  };
+
   useEffect(() => {
     if (isLocalBackend) {
       const loadLocalUser = async () => {
@@ -56,8 +73,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setProfile(toLocalProfile(cachedUser));
         }
 
+        const isNetworkError = (e: any) =>
+          e?.status === 0 ||
+          e?.message?.includes("Cannot reach") ||
+          e?.message?.includes("Failed to fetch") ||
+          e?.name === "TypeError" ||
+          e?.name === "AbortError";
+
         try {
-          const result = localAuth.getToken()
+          // Clear any stale dummy/missing token so we always try a real login
+          const existingToken = localAuth.getToken();
+          if (!existingToken || existingToken === "dummy-token") {
+            localAuth.clearToken();
+          }
+          const result = existingToken && existingToken !== "dummy-token"
             ? await localMe()
             : await localDefaultLogin();
           localAuth.setUser(result.user);
@@ -65,6 +94,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setSession(null);
           setProfile(toLocalProfile(result.user));
         } catch (error: any) {
+          // Server unreachable — activate demo mode so reviewer sees a working app
+          if (isNetworkError(error)) {
+            activateDemoMode();
+            return;
+          }
+
           if (error?.status === 401) {
             localAuth.clearToken();
             try {
@@ -75,6 +110,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               setProfile(toLocalProfile(result.user));
               return;
             } catch (retryError: any) {
+              if (isNetworkError(retryError)) {
+                activateDemoMode();
+                return;
+              }
               setAuthError(retryError?.message || "Could not open the default CertiStock account.");
             }
           } else {

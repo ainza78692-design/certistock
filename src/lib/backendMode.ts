@@ -8,7 +8,7 @@ export const isLocalBackend = backendMode === "local";
 
 export const LOCAL_API_URL_STORAGE_KEY = "certistock.local.apiUrl";
 
-const FALLBACK_LOCAL_API_URL = "http://10.43.139.233:8787";
+const FALLBACK_LOCAL_API_URL = "http://100.65.85.125:8787";
 
 const normalizeUrlValue = (value: string) => {
   const withProtocol = /^https?:\/\//i.test(value) ? value : `http://${value}`;
